@@ -1,0 +1,5 @@
+# Netscape HTTP Cookie File
+.example.com	TRUE	/	TRUE	1813025057	session_id	abc123xyz
+.example.com	TRUE	/	FALSE	-1	lang	zh-CN
+.example.com	TRUE	/	TRUE	1813025057	auth_token	eyJhbGciOiJIUzI1NiJ9.test
+.app.example.com	FALSE	/	TRUE	0	_csrf	tokenvalue123

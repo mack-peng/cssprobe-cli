@@ -1,0 +1,51 @@
+{
+  "name": "cssprobe-cli",
+  "version": "0.1.0",
+  "description": "Runtime CSS probe — inspect layout, colors, backgrounds, fonts and more in a live browser. AI agents and shell automation.",
+  "keywords": [
+    "css",
+    "inspect",
+    "layout",
+    "dom",
+    "forensics",
+    "debug",
+    "browser",
+    "agent",
+    "automation"
+  ],
+  "homepage": "https://github.com/mack-peng/cssprobe-cli#readme",
+  "repository": "github:mack-peng/cssprobe-cli",
+  "license": "MIT",
+  "author": "strikingly",
+  "main": "dist/index.js",
+  "bin": {
+    "cssprobe-cli": "./bin/cssprobe-cli.js"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "docs",
+    "README.md",
+    "LICENSE",
+    "AGENTS.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "node scripts/build.js",
+    "typecheck": "tsc --noEmit",
+    "test": "npx tsx --test tests/*.test.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "playwright-core": "^1.48.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.24.0",
+    "tsx": "^4.23.0",
+    "typescript": "^5.5.0"
+  }
+}
