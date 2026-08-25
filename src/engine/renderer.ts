@@ -3,6 +3,14 @@
 
 import type { Snapshot, TreeNode, AncestorNode, Finding, Confidence } from './types';
 
+// ─── Node label (matches analyzer.ts nodeLabel) ───
+
+function nodeLabel(node: TreeNode): string {
+  const cls = node.classes.length ? `.${node.classes.join('.')}` : '';
+  const id = node.id ? `#${node.id}` : '';
+  return `${node.tag}${id}${cls}`;
+}
+
 // ─── Node rendering (DOM tree) ───
 
 function renderNode(node: TreeNode, indent: number): string[] {
@@ -57,6 +65,94 @@ function renderAncestors(chain: AncestorNode[]): string[] {
   });
 }
 
+// ─── Tree Sketch (ASCII structure diagram, issues only) ───
+
+interface SketchNode {
+  label: string;
+  shape: string;
+  flags: string[];
+  children: SketchNode[];
+  hasIssue: boolean;
+  omitted: number;
+}
+
+function buildSketchTree(node: TreeNode | null, issueLabels: Set<string>): SketchNode | null {
+  if (!node) return null;
+  const label = nodeLabel(node);
+  const s = node.shape || {};
+  const shapeStr = s.role ? `[${s.role} h:${s.heightStrategy} w:${s.widthStrategy}]` : '';
+
+  const flags: string[] = [];
+  if (node.flags.overflowsParent) flags.push('\u26A0parent-overflow');
+  if (node.flags.overflowsViewport) flags.push('\u26A0viewport-overflow');
+  if (node.metrics.clientHeight === 0 && node.metrics.offsetHeight === 0) flags.push('\u26A0collapsed');
+  if (node.flags.scrollable) flags.push('\u2714scrollable');
+  if (node.containingBlockModifiers.length) flags.push(`CB:${node.containingBlockModifiers.join(' ')}`);
+
+  const hasIssue = issueLabels.has(label) || flags.length > 0;
+
+  const children: SketchNode[] = [];
+  let omitted = 0;
+  for (const child of node.children) {
+    const sketchChild = buildSketchTree(child, issueLabels);
+    if (!sketchChild) continue;
+    if (sketchChild.hasIssue || hasDescendantIssue(sketchChild)) {
+      children.push(sketchChild);
+    } else {
+      omitted++;
+    }
+  }
+
+  return { label, shape: shapeStr, flags, children, hasIssue, omitted };
+}
+
+function hasDescendantIssue(node: SketchNode): boolean {
+  if (node.hasIssue) return true;
+  return node.children.some(c => hasDescendantIssue(c));
+}
+
+function renderSketchNode(node: SketchNode, prefix: string, isLast: boolean): string[] {
+  const lines: string[] = [];
+  const connector = isLast ? '\u2514\u2500 ' : '\u251C\u2500 ';
+  const flagStr = node.flags.length ? ` ${node.flags.join(' ')}` : '';
+  const issueMark = node.hasIssue && node.flags.length === 0 ? ' \u26A0' : '';
+  lines.push(`${prefix}${connector}${node.label} ${node.shape}${flagStr}${issueMark}`);
+
+  const childPrefix = prefix + (isLast ? '   ' : '\u2502  ');
+  const totalChildren = node.children.length + (node.omitted > 0 ? 1 : 0);
+
+  for (let i = 0; i < node.children.length; i++) {
+    lines.push(...renderSketchNode(node.children[i], childPrefix, i === totalChildren - 1));
+  }
+
+  if (node.omitted > 0) {
+    const omConnector = '\u2514\u2500 ';
+    lines.push(`${childPrefix}${omConnector}... (${node.omitted} subtrees omitted)`);
+  }
+
+  return lines;
+}
+
+function renderSketch(tree: TreeNode | null, findings: Finding[]): string[] {
+  if (!tree) return ['(empty tree)'];
+
+  const issueLabels = new Set<string>();
+  for (const f of findings) {
+    if (f.level === 'warning' || f.level === 'error') {
+      if (f.location) issueLabels.add(f.location);
+    }
+  }
+
+  const sketchRoot = buildSketchTree(tree, issueLabels);
+  if (!sketchRoot) return ['(empty tree)'];
+
+  if (!hasDescendantIssue(sketchRoot) && !sketchRoot.hasIssue) {
+    return [`${sketchRoot.label} ${sketchRoot.shape} (no issues found in tree)`];
+  }
+
+  return renderSketchNode(sketchRoot, '', true);
+}
+
 // ─── Findings rendering ───
 
 const CONF_BADGE: Record<Confidence, string> = {
@@ -87,6 +183,23 @@ function renderFindings(findings: Finding[]): string[] {
   return lines;
 }
 
+function renderBriefFindings(findings: Finding[]): string[] {
+  const lines: string[] = [];
+  lines.push('## Findings');
+  const important = findings.filter(f => f.level === 'warning' || f.level === 'error');
+  if (important.length === 0) {
+    lines.push('- No warnings or errors');
+    return lines;
+  }
+  for (const f of important) {
+    const badge = `[${CONF_BADGE[f.confidence]}]`;
+    const loc = f.location ? ` @ ${f.location}` : '';
+    const icon = f.level === 'error' ? '\u26A0' : '\u26A0';
+    lines.push(`- ${icon} ${f.message} ${badge}${loc}`);
+  }
+  return lines;
+}
+
 function confidenceSummary(findings: Finding[]): string {
   const counts = findings.reduce((acc, f) => {
     acc[f.confidence] = (acc[f.confidence] || 0) + 1;
@@ -102,7 +215,7 @@ function confidenceSummary(findings: Finding[]): string {
 
 // ─── Markdown ───
 
-export function renderMarkdown(snapshot: Snapshot, findings: Finding[]): string {
+export function renderMarkdown(snapshot: Snapshot, findings: Finding[], brief = false): string {
   const lines: string[] = [];
   const vp = snapshot.viewport ? `${snapshot.viewport.width}\u00D7${snapshot.viewport.height}` : 'unknown';
   lines.push('# cssprobe-cli report');
@@ -124,14 +237,22 @@ export function renderMarkdown(snapshot: Snapshot, findings: Finding[]): string 
   lines.push(...renderAncestors(snapshot.ancestors));
   lines.push('```');
 
-  lines.push('');
-  lines.push(`## DOM tree (${snapshot.downDepth} levels deep)`);
-  lines.push('```');
-  lines.push(...renderNode(snapshot.tree!, 0));
-  lines.push('```');
+  if (brief) {
+    lines.push('');
+    lines.push('## Tree Sketch (issues only)');
+    lines.push('```');
+    lines.push(...renderSketch(snapshot.tree, findings));
+    lines.push('```');
+  } else {
+    lines.push('');
+    lines.push(`## DOM tree (${snapshot.downDepth} levels deep)`);
+    lines.push('```');
+    lines.push(...renderNode(snapshot.tree!, 0));
+    lines.push('```');
+  }
 
   lines.push('');
-  lines.push(...renderFindings(findings));
+  lines.push(...(brief ? renderBriefFindings(findings) : renderFindings(findings)));
 
   if (snapshot.crossOriginBlocked && snapshot.crossOriginBlocked > 0) {
     lines.push('');
@@ -147,19 +268,45 @@ export function renderMarkdown(snapshot: Snapshot, findings: Finding[]): string 
 
 // ─── JSON ───
 
-export function renderJSON(snapshot: Snapshot, findings: Finding[]): object {
+export function renderJSON(snapshot: Snapshot, findings: Finding[], brief = false): object {
   const counts = findings.reduce((acc, f) => {
     acc[f.confidence] = (acc[f.confidence] || 0) + 1;
     return acc;
   }, {} as Record<Confidence, number>);
+
+  const meta = {
+    rootSelector: snapshot.rootSelector,
+    viewport: snapshot.viewport,
+    nodeCount: snapshot.nodeCount,
+    crossOriginBlocked: snapshot.crossOriginBlocked,
+    blockedSheetUrls: snapshot.blockedSheetUrls,
+  };
+
+  if (brief) {
+    const important = findings.filter(f => f.level === 'warning' || f.level === 'error');
+    const briefFindings = important.map(f => ({
+      id: f.id,
+      level: f.level,
+      message: f.message,
+      confidence: f.confidence,
+      location: f.location,
+      evidence: f.evidence.slice(0, 1),
+    }));
+    return {
+      meta,
+      snapshot: { rootSelector: snapshot.rootSelector, nodeCount: snapshot.nodeCount, downDepth: snapshot.downDepth },
+      findings: briefFindings,
+      summary: {
+        total: findings.length,
+        warnings: important.filter(f => f.level === 'warning').length,
+        errors: important.filter(f => f.level === 'error').length,
+        confidence: { DEFINITE: counts.DEFINITE || 0, INDEFINITE: counts.INDEFINITE || 0, UNVERIFIABLE: counts.UNVERIFIABLE || 0 },
+      },
+    };
+  }
+
   return {
-    meta: {
-      rootSelector: snapshot.rootSelector,
-      viewport: snapshot.viewport,
-      nodeCount: snapshot.nodeCount,
-      crossOriginBlocked: snapshot.crossOriginBlocked,
-      blockedSheetUrls: snapshot.blockedSheetUrls,
-    },
+    meta,
     snapshot: snapshot.error ? { error: snapshot.error, candidates: snapshot.candidates } : snapshot,
     findings,
     summary: {

@@ -27,10 +27,11 @@ const inspect = declareCommand({
     headed: z.boolean().optional().describe('show the browser window'),
     browser: z.enum(['chromium', 'firefox', 'webkit']).optional().describe('browser engine (default chromium)'),
     zoom: z.boolean().optional().describe('run 1x/0.5x viewport diagnosis'),
-    depth: numberArg.optional().describe('DOM tree depth (default 6)'),
+    depth: numberArg.optional().describe('DOM tree depth (default: auto, max 20)'),
     'max-nodes': numberArg.optional().describe('node count cap (default 60)'),
     'up-to': z.string().optional().describe('ancestor stop tag (default html)'),
     state: z.string().optional().describe('path to saved state file (cookies + localStorage)'),
+    brief: z.boolean().optional().describe('compact output: tree sketch + warnings/errors only'),
   }),
 });
 
