@@ -7,6 +7,7 @@ export interface ProfileConfig {
   browser?: string;
   depth?: string;
   headed?: string;
+  viewport?: string;
 }
 
 interface RcFile {
@@ -18,6 +19,7 @@ export interface Config {
   browser: string;
   depth: number;
   headed: boolean;
+  viewport?: { width: number; height: number };
   output: 'text' | 'json';
   raw: boolean;
 }
@@ -59,6 +61,15 @@ function resolveProfile(args: MinimistArgs): ProfileConfig {
   return rc.profiles[name] || {};
 }
 
+function parseViewport(raw: string): { width: number; height: number } | undefined {
+  const match = raw.match(/^(\d+)\s*[xX*](\d+)$/);
+  if (!match) return undefined;
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  if (width > 0 && height > 0) return { width, height };
+  return undefined;
+}
+
 export function loadConfig(args: MinimistArgs): Config {
   const profile = resolveProfile(args);
 
@@ -67,10 +78,14 @@ export function loadConfig(args: MinimistArgs): Config {
   const depth = depthRaw ? Number(depthRaw) : 6;
   const headed = !!(args.headed || process.env.CSSPROBE_HEADED === 'true' || profile.headed === 'true');
 
+  const viewportRaw = (args.viewport as string) || process.env.CSSPROBE_VIEWPORT || profile.viewport;
+  const viewport = viewportRaw ? parseViewport(viewportRaw) : undefined;
+
   return {
     browser,
     depth: Number.isNaN(depth) ? 6 : depth,
     headed,
+    viewport,
     output: args.json ? 'json' : 'text',
     raw: !!args.raw,
   };
@@ -81,6 +96,7 @@ export function maskConfig(config: Config): Record<string, string> {
     browser: config.browser,
     depth: String(config.depth),
     headed: String(config.headed),
+    ...(config.viewport ? { viewport: `${config.viewport.width}x${config.viewport.height}` } : {}),
   };
 }
 

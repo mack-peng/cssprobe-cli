@@ -12,6 +12,8 @@ export interface LauncherOptions {
   headed?: boolean;
   /** Path to a Playwright storage state file (cookies + localStorage). */
   state?: string;
+  /** Custom viewport size. Defaults to 1280×720. */
+  viewport?: { width: number; height: number };
 }
 
 const COLLECTOR_BUNDLE_PATH = path.join(__dirname, '..', 'collector-bundle.js');
@@ -83,7 +85,8 @@ export class BrowserLauncher {
     this.browser = await factory.launch(launchOptions);
 
     // Load saved state if provided
-    const contextOptions: Record<string, any> = { viewport: { width: 1280, height: 720 } };
+    const vp = this.options.viewport || { width: 1280, height: 720 };
+    const contextOptions: Record<string, any> = { viewport: vp };
     if (this.options.state && fs.existsSync(this.options.state)) {
       contextOptions.storageState = this.options.state;
     }
@@ -221,7 +224,8 @@ export class BrowserLauncher {
     if (execPath) launchOptions.executablePath = execPath;
 
     this.browser = await factory.launch(launchOptions);
-    this.context = await this.browser.newContext({ viewport: { width: 1280, height: 720 } });
+    const vp = this.options.viewport || { width: 1280, height: 720 };
+    this.context = await this.browser.newContext({ viewport: vp });
     this.page = await this.context.newPage();
 
     // Navigate to the target URL

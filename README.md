@@ -142,6 +142,7 @@ Options:
   --brief                     Compact output: tree sketch + warnings/errors only
   --layout                    ASCII layout diagram showing element positions and sizes
   --wait                      Wait for user interaction before collecting (implies --headed)
+  --viewport <WxH>            Viewport size (e.g. 375x812, default 1280x720)
 ```
 
 ---
@@ -189,6 +190,7 @@ The report header shows: `confidence: DEFINITE 8 | INDEFINITE 0 | UNVERIFIABLE 1
 # Set values
 cssprobe-cli config-set browser chromium
 cssprobe-cli config-set depth 8
+cssprobe-cli config-set viewport 375x812
 
 # Show current config
 cssprobe-cli config-show
@@ -206,6 +208,7 @@ Priority: CLI flags > Environment variables > Config file
 --browser       CSSPROBE_BROWSER
 --depth         CSSPROBE_DEPTH
 --headed        CSSPROBE_HEADED
+--viewport      CSSPROBE_VIEWPORT
 -p, --profile   CSSPROBE_PROFILE
 ```
 
