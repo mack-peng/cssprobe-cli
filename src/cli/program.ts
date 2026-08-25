@@ -140,14 +140,12 @@ async function handleInspect(
     }
     const maxNodes = (parsed['max-nodes'] as number) || 60;
     const upTo = (parsed['up-to'] as string) || 'html';
-    const headed = !!parsed.headed || config.headed;
+    const wait = !!parsed.wait;
+    const headed = !!parsed.headed || config.headed || wait;
     const browser = (parsed.browser as string) || config.browser;
     const state = (parsed.state as string) || undefined;
     const brief = !!parsed.brief;
     const layout = !!parsed.layout;
-    const wait = !!parsed.wait;
-    // --wait implies --headed
-    if (wait) { (args as any).headed = true; }
 
     if (!url) output.error('URL is required. Usage: cssprobe-cli inspect <url> [selector]');
 
