@@ -131,6 +131,31 @@ export class BrowserLauncher {
     }, selector);
   }
 
+  /** Wait for user to interact with the page. Press Enter to continue. */
+  async waitForUser(): Promise<void> {
+    console.error('');
+    console.error('  Browser is open. Perform your actions (login, click buttons, open dialogs, etc.).');
+    console.error('  Press Enter here when ready to inspect...');
+    console.error('');
+    await new Promise<void>(resolve => {
+      process.stdin.once('data', () => resolve());
+    });
+  }
+
+  /** Navigate to a new URL in the existing page. */
+  async navigate(url: string): Promise<void> {
+    if (!this.page) throw new Error('Browser not opened. Call open() first.');
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    } else if (url.startsWith('file://')) {
+      await this.page.goto(url, { waitUntil: 'load', timeout: 30000 });
+    } else {
+      const resolved = path.resolve(url);
+      if (!fs.existsSync(resolved)) throw new Error(`File not found: ${resolved}`);
+      await this.page.goto(`file://${resolved}`, { waitUntil: 'load', timeout: 30000 });
+    }
+  }
+
   /** Scan the page for likely root elements (modals, dialogs, scroll containers). */
   async autoDetectRoot(): Promise<string[]> {
     if (!this.page) throw new Error('Browser not opened. Call open() first.');

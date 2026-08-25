@@ -153,6 +153,91 @@ function renderSketch(tree: TreeNode | null, findings: Finding[]): string[] {
   return renderSketchNode(sketchRoot, '', true);
 }
 
+// ─── Layout diagram (ASCII box layout) ───
+
+const BOX = { tl: '\u250C', tr: '\u2510', bl: '\u2514', br: '\u2518', h: '\u2500', v: '\u2502' } as const;
+
+function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] {
+  if (!snapshot.tree) return ['(empty tree)'];
+
+  const vpW = snapshot.viewport.width;
+  const termWidth = Math.min(Math.max(process.stdout?.columns || 80, 60), 120);
+  const indentUnit = 2;
+  const maxDepth = 8;
+  const boxPad = 4; // '│ ' prefix per depth level
+
+  const issueLocations = new Set<string>();
+  for (const f of findings) {
+    if (f.location && (f.level === 'warning' || f.level === 'error')) issueLocations.add(f.location);
+  }
+
+  function boxCharW(nodeW: number, depth: number): number {
+    const usedIndent = depth * indentUnit;
+    const available = termWidth - usedIndent - boxPad;
+    const ratio = nodeW / vpW;
+    return Math.max(Math.round(available * ratio), 14);
+  }
+
+  const lines: string[] = [];
+
+  function renderEl(node: TreeNode, depth: number, parentW: number): void {
+    if (depth > maxDepth) {
+      lines.push('  '.repeat(depth) + '... (depth limit)');
+      return;
+    }
+
+    const m = node.metrics.rect;
+    // Skip zero-size elements (SVG symbols, hidden elements)
+    if (m.width < 1 && m.height < 1 && node.children.length > 0) {
+      for (const child of node.children) renderEl(child, depth, parentW);
+      return;
+    }
+    if (m.width < 1 && m.height < 1) return;
+
+    const label = nodeLabel(node);
+    const hasIssue = issueLocations.has(label);
+    const dimStr = `${Math.round(m.width)}\u00D7${Math.round(m.height)}`;
+    const charW = boxCharW(m.width, depth);
+    const innerW = charW - 2;
+    const indent = '  '.repeat(depth);
+    const issueMark = hasIssue ? ' \u26A0' : '';
+
+    if (innerW < 3) {
+      // Too narrow for a proper box
+      lines.push(`${indent}${BOX.v} ${label.slice(0, charW - 3)}... ${dimStr}`);
+      for (const child of node.children) renderEl(child, depth + 1, m.width);
+      return;
+    }
+
+    // Top border: ┌─ label ────────┐ WxH
+    const labelPart = ` ${label} `;
+    const dimPart = ` ${dimStr} `;
+    const topFillLen = Math.max(0, innerW - labelPart.length);
+    lines.push(`${indent}${BOX.tl}${BOX.h}${labelPart}${BOX.h.repeat(topFillLen)}${BOX.tr}${dimPart}${issueMark}`);
+
+    // Content
+    if (node.children.length === 0) {
+      // Empty box
+      lines.push(`${indent}${BOX.v}${' '.repeat(innerW)}${BOX.v}`);
+    } else {
+      for (const child of node.children) renderEl(child, depth + 1, m.width);
+    }
+
+    // Bottom border: └───────────────┘
+    lines.push(`${indent}${BOX.bl}${BOX.h.repeat(innerW)}${BOX.br}`);
+  }
+
+  renderEl(snapshot.tree, 0, vpW);
+
+  const scaleStr = `${Math.round(vpW / termWidth)}px/char`;
+  const result: string[] = [];
+  result.push(`## Layout (${vpW}\u00D7${snapshot.viewport.height} viewport, scale: ${scaleStr})`);
+  result.push('```');
+  result.push(...lines);
+  result.push('```');
+  return result;
+}
+
 // ─── Findings rendering ───
 
 const CONF_BADGE: Record<Confidence, string> = {
@@ -215,7 +300,7 @@ function confidenceSummary(findings: Finding[]): string {
 
 // ─── Markdown ───
 
-export function renderMarkdown(snapshot: Snapshot, findings: Finding[], brief = false): string {
+export function renderMarkdown(snapshot: Snapshot, findings: Finding[], brief = false, layout = false): string {
   const lines: string[] = [];
   const vp = snapshot.viewport ? `${snapshot.viewport.width}\u00D7${snapshot.viewport.height}` : 'unknown';
   lines.push('# cssprobe-cli report');
@@ -237,13 +322,18 @@ export function renderMarkdown(snapshot: Snapshot, findings: Finding[], brief = 
   lines.push(...renderAncestors(snapshot.ancestors));
   lines.push('```');
 
+  if (layout) {
+    lines.push('');
+    lines.push(...renderLayout(snapshot, findings));
+  }
+
   if (brief) {
     lines.push('');
     lines.push('## Tree Sketch (issues only)');
     lines.push('```');
     lines.push(...renderSketch(snapshot.tree, findings));
     lines.push('```');
-  } else {
+  } else if (!layout) {
     lines.push('');
     lines.push(`## DOM tree (${snapshot.downDepth} levels deep)`);
     lines.push('```');

@@ -125,9 +125,44 @@ cssprobe-cli inspect https://mysite.com/page ".target" --state ~/.cssprobe-cli/s
 cssprobe-cli state-import new-cookies.txt --merge existing-state.json --out updated.json
 ```
 
+### Option D: Wait for User Interaction
+
+For pages that require clicking a button or opening a dialog before inspection:
+
+```bash
+cssprobe-cli inspect https://mysite.com/page ".dialog" --state ~/.cssprobe-cli/states/mysite.json --wait
+# Browser opens -> perform actions (click, open dialog) -> press Enter -> inspect
+```
+
 ---
 
-## Step 5: Understand the Output
+## Step 5: Interactive Mode (REPL)
+
+For inspecting multiple areas of the same page without re-opening the browser:
+
+```bash
+cssprobe-cli interactive https://mysite.com --state ~/.cssprobe-cli/states/mysite.json
+```
+
+Runtime commands:
+
+```
+inspect> tree .dialog-A               # DOM tree
+inspect> layout .sidebar-B            # ASCII layout diagram
+inspect> sketch .content              # Tree sketch (issues only)
+inspect> findings .modal              # Findings only
+inspect> json .dialog-A               # JSON output
+inspect> report .dialog-A             # Full report
+inspect> .dialog-A                    # Shorthand for report
+inspect> navigate https://other.com   # Navigate to new URL
+inspect> depth 10                     # Set depth
+inspect> help                         # Show help
+inspect> quit                         # Exit
+```
+
+---
+
+## Step 6: Understand the Output
 
 ### Markdown Report (default)
 

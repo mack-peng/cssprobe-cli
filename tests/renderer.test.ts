@@ -192,4 +192,68 @@ describe('renderer', () => {
       assert.strictEqual(result.summary.errors, 1);
     });
   });
+
+  describe('renderMarkdown with layout', () => {
+    it('renders layout diagram when layout=true', () => {
+      const tree = makeNode({ tag: 'div', classes: ['root'], children: [makeNode({ tag: 'span' })] });
+      const snapshot = makeSnapshot({ tree, nodeCount: 2 });
+      const result = renderMarkdown(snapshot, [], false, true);
+      assert.ok(result.includes('Layout'));
+      assert.ok(result.includes('\u250C')); // ┌
+      assert.ok(result.includes('\u2514')); // └
+      assert.ok(result.includes('\u2502')); // │
+      assert.ok(!result.includes('DOM tree'));
+    });
+
+    it('shows viewport and scale info', () => {
+      const tree = makeNode({ tag: 'div' });
+      const snapshot = makeSnapshot({ tree, nodeCount: 1 });
+      const result = renderMarkdown(snapshot, [], false, true);
+      assert.ok(result.includes('1280\u00D7720'));
+      assert.ok(result.includes('viewport'));
+      assert.ok(result.includes('scale'));
+    });
+
+    it('shows dimensions for each element', () => {
+      const tree = makeNode({ tag: 'div', metrics: { rect: { x: 0, y: 0, width: 960, height: 500 }, rectBottom: 500, rectRight: 960, offsetHeight: 500, clientHeight: 500, scrollHeight: 500, clientWidth: 960, scrollWidth: 960 } });
+      const snapshot = makeSnapshot({ tree, nodeCount: 1 });
+      const result = renderMarkdown(snapshot, [], false, true);
+      assert.ok(result.includes('960\u00D7500'));
+    });
+
+    it('renders nested elements with indentation', () => {
+      const child = makeNode({ tag: 'span', metrics: { rect: { x: 10, y: 10, width: 200, height: 50 }, rectBottom: 60, rectRight: 210, offsetHeight: 50, clientHeight: 50, scrollHeight: 50, clientWidth: 200, scrollWidth: 200 } });
+      const tree = makeNode({ tag: 'div', children: [child] });
+      const snapshot = makeSnapshot({ tree, nodeCount: 2 });
+      const result = renderMarkdown(snapshot, [], false, true);
+      const lines = result.split('\n');
+      const layoutLines = lines.filter(l => l.includes('\u250C') || l.includes('\u2514'));
+      assert.ok(layoutLines.length >= 4); // top+bottom for each element
+    });
+
+    it('marks issue elements with warning icon', () => {
+      const tree = makeNode({ tag: 'div', classes: ['root'], flags: { overflowsViewport: true, overflowsParent: false, hasScrollY: false, hasScrollX: false, scrollable: false } });
+      const findings = [makeFinding({ id: 'test', level: 'warning', message: 'test', location: 'div.root' })];
+      const snapshot = makeSnapshot({ tree, nodeCount: 1 });
+      const result = renderMarkdown(snapshot, findings, false, true);
+      assert.ok(result.includes('\u26A0'));
+    });
+
+    it('layout mode skips DOM tree section', () => {
+      const tree = makeNode({ tag: 'div' });
+      const snapshot = makeSnapshot({ tree, nodeCount: 1 });
+      const result = renderMarkdown(snapshot, [], false, true);
+      assert.ok(!result.includes('DOM tree'));
+      assert.ok(result.includes('Layout'));
+    });
+
+    it('layout + brief shows both layout and sketch', () => {
+      const tree = makeNode({ tag: 'div', classes: ['root'], flags: { overflowsViewport: true, overflowsParent: false, hasScrollY: false, hasScrollX: false, scrollable: false } });
+      const findings = [makeFinding({ id: 'test', level: 'warning', message: 'test', location: 'div.root' })];
+      const snapshot = makeSnapshot({ tree, nodeCount: 1 });
+      const result = renderMarkdown(snapshot, findings, true, true);
+      assert.ok(result.includes('Layout'));
+      assert.ok(result.includes('Tree Sketch'));
+    });
+  });
 });

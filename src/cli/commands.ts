@@ -32,6 +32,8 @@ const inspect = declareCommand({
     'up-to': z.string().optional().describe('ancestor stop tag (default html)'),
     state: z.string().optional().describe('path to saved state file (cookies + localStorage)'),
     brief: z.boolean().optional().describe('compact output: tree sketch + warnings/errors only'),
+    layout: z.boolean().optional().describe('ASCII layout diagram showing element positions and sizes'),
+    wait: z.boolean().optional().describe('wait for user interaction before collecting (implies --headed)'),
   }),
 });
 
@@ -139,8 +141,22 @@ const stateImport = declareCommand({
   }),
 });
 
+const interactive = declareCommand({
+  name: 'interactive',
+  category: 'core',
+  description: 'Open browser and inspect interactively (REPL mode)',
+  args: z.object({
+    url: urlArg,
+  }),
+  options: z.object({
+    browser: z.enum(['chromium', 'firefox', 'webkit']).optional().describe('browser engine (default chromium)'),
+    state: z.string().optional().describe('path to saved state file (cookies + localStorage)'),
+    depth: numberArg.optional().describe('DOM tree depth (default: auto, max 20)'),
+  }),
+});
+
 const commandsArray: AnyCommandSchema[] = [
-  inspect, login, stateImport,
+  inspect, login, stateImport, interactive,
   configShow, configSet, configList, configUse, configNew, configPath,
   skillInstall, skillUninstall,
 ];
