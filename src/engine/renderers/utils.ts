@@ -23,8 +23,14 @@ export function smartLabel(node: TreeNode, maxLen: number): string {
   return node.tag.slice(0, Math.max(maxLen - 3, 1)) + '...';
 }
 
-export function isFlexRow(node: TreeNode): boolean {
-  return node.shape?.role === 'flex-row' || (node.props.display === 'flex' && node.props.flexDirection !== 'column');
+export function isMultiColumn(node: TreeNode): boolean {
+  const display = node.props.display;
+  return (
+    node.shape?.role === 'flex-row' ||
+    (display === 'flex' && node.props.flexDirection !== 'column') ||
+    display === 'grid' ||
+    display === 'inline-grid'
+  );
 }
 
 export const BOX = { tl: '\u250C', tr: '\u2510', bl: '\u2514', br: '\u2518', h: '\u2500', v: '\u2502' } as const;

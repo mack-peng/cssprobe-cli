@@ -1,5 +1,5 @@
 import type { Snapshot, TreeNode, Finding } from '../types';
-import { nodeLabel, smartLabel, isFlexRow, BOX } from './utils';
+import { nodeLabel, smartLabel, isMultiColumn, BOX } from './utils';
 
 export function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] {
   if (!snapshot.tree) return ['(empty tree)'];
@@ -60,11 +60,12 @@ export function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] 
           boxLines.push(`${BOX.v}${childLine.slice(0, innerW)}${BOX.v}`);
         }
       }
-    } else if (isFlexRow(node)) {
+    } else if (isMultiColumn(node)) {
       // Calculate expanded count (considering repeat)
       const expandedCount = children.reduce((sum, c) => sum + (c.repeat && c.repeat > 1 ? c.repeat : 1), 0);
       if (expandedCount > 1) {
-        const childLines = renderFlexChildren(children, innerW, depth + 1, m.width);
+        const isGrid = node.props.display === 'grid' || node.props.display === 'inline-grid';
+        const childLines = renderFlexChildren(children, innerW, depth + 1, m.width, isGrid);
         for (const cl of childLines) {
           boxLines.push(`${BOX.v}${cl}${BOX.v}`);
         }
@@ -99,7 +100,7 @@ export function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] 
     return boxLines;
   }
 
-  function renderFlexChildren(children: TreeNode[], availW: number, depth: number, parentPxW: number): string[] {
+  function renderFlexChildren(children: TreeNode[], availW: number, depth: number, parentPxW: number, isGrid: boolean): string[] {
     // Expand repeat nodes into multiple copies
     const expanded: TreeNode[] = [];
     for (const child of children) {
@@ -109,50 +110,67 @@ export function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] 
       }
     }
 
-    const gap = 1;
-    const totalGaps = (expanded.length - 1) * gap;
-    const usableW = Math.max(availW - totalGaps, expanded.length * 8);
-    const childWidths: number[] = [];
-    let totalUsed = 0;
-    for (let i = 0; i < expanded.length; i++) {
-      const ratio = expanded[i].metrics.rect.width / parentPxW;
-      const w = Math.max(Math.round(usableW * ratio), 8);
-      childWidths.push(w);
-      totalUsed += w;
-    }
-    if (childWidths.length > 0) {
-      childWidths[childWidths.length - 1] += usableW - totalUsed;
-    }
-
-    const childBoxes: string[][] = [];
-    let maxLines = 0;
-    for (let i = 0; i < expanded.length; i++) {
-      const box = renderBox(expanded[i], childWidths[i], depth, true);
-      childBoxes.push(box);
-      if (box.length > maxLines) maxLines = box.length;
-    }
-
-    const result: string[] = [];
-    for (let lineIdx = 0; lineIdx < maxLines; lineIdx++) {
-      let merged = '';
-      for (let i = 0; i < childBoxes.length; i++) {
-        const w = childWidths[i];
-        if (i > 0) merged += ' ';
-        if (lineIdx < childBoxes[i].length) {
-          const line = childBoxes[i][lineIdx];
-          if (line.length < w) {
-            merged += line + ' '.repeat(w - line.length);
-          } else {
-            merged += line.slice(0, w);
-          }
-        } else {
-          merged += ' '.repeat(w);
-        }
+    // For grid: group into rows based on column count
+    let rows: TreeNode[][];
+    if (isGrid && expanded.length > 1) {
+      const childW = expanded[0].metrics.rect.width;
+      const cols = Math.max(1, Math.floor(parentPxW / childW));
+      rows = [];
+      for (let i = 0; i < expanded.length; i += cols) {
+        rows.push(expanded.slice(i, i + cols));
       }
-      result.push(merged);
+    } else {
+      rows = [expanded];
     }
 
-    return result;
+    const allResult: string[] = [];
+    for (const row of rows) {
+      const gap = 1;
+      const totalGaps = (row.length - 1) * gap;
+      const minPerChild = 10;
+      const usableW = Math.max(availW - totalGaps, row.length * minPerChild);
+
+      const childWidths: number[] = [];
+      let totalUsed = 0;
+      for (let i = 0; i < row.length; i++) {
+        const ratio = row[i].metrics.rect.width / parentPxW;
+        const w = Math.max(Math.round(usableW * ratio), minPerChild);
+        childWidths.push(w);
+        totalUsed += w;
+      }
+      if (childWidths.length > 0 && usableW > totalUsed) {
+        childWidths[childWidths.length - 1] += usableW - totalUsed;
+      }
+
+      const childBoxes: string[][] = [];
+      let maxLines = 0;
+      for (let i = 0; i < row.length; i++) {
+        const box = renderBox(row[i], childWidths[i], depth, true);
+        childBoxes.push(box);
+        if (box.length > maxLines) maxLines = box.length;
+      }
+
+      for (let lineIdx = 0; lineIdx < maxLines; lineIdx++) {
+        let merged = '';
+        for (let i = 0; i < childBoxes.length; i++) {
+          const w = childWidths[i];
+          if (i > 0) merged += ' ';
+          if (lineIdx < childBoxes[i].length) {
+            const line = childBoxes[i][lineIdx];
+            if (line.length < w) {
+              merged += line + ' '.repeat(w - line.length);
+            } else {
+              merged += line.slice(0, w);
+            }
+          } else {
+            merged += ' '.repeat(w);
+          }
+        }
+        allResult.push(merged);
+      }
+    }
+
+    return allResult;
   }
 
   function renderEl(node: TreeNode, depth: number, parentW: number): void {
