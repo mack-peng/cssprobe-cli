@@ -126,12 +126,19 @@ async function handleInspect(
     const url = parsed.url as string;
     const selector = parsed.selector as string | undefined;
     const zoom = !!parsed.zoom;
-    const depth = (parsed.depth as number) || config.depth;
+    const depthRaw = parsed.depth as number | string | undefined;
+    let depth: number;
+    if (depthRaw === 'auto' || depthRaw === undefined) {
+      depth = 0; // placeholder, resolved after browser opens
+    } else {
+      depth = Number(depthRaw);
+    }
     const maxNodes = (parsed['max-nodes'] as number) || 60;
     const upTo = (parsed['up-to'] as string) || 'html';
     const headed = !!parsed.headed || config.headed;
     const browser = (parsed.browser as string) || config.browser;
     const state = (parsed.state as string) || undefined;
+    const brief = !!parsed.brief;
 
     if (!url) output.error('URL is required. Usage: cssprobe-cli inspect <url> [selector]');
 
@@ -147,6 +154,16 @@ async function handleInspect(
       console.error(`Auto-detected root: ${rootSelector}`);
     }
 
+    const launcher = new BrowserLauncher({ browser, headed, state });
+    await launcher.open(url);
+
+    // Resolve auto depth
+    if (depth === 0) {
+      const measured = await launcher.measureDepth(rootSelector);
+      depth = Math.min(measured, 20) || 6;
+      console.error(`Auto-detected depth: ${measured} (using ${depth})`);
+    }
+
     const collectCfg: CollectConfig = {
       rootSelector,
       upTo,
@@ -154,17 +171,15 @@ async function handleInspect(
       maxNodes,
     };
 
-    const launcher = new BrowserLauncher({ browser, headed, state });
-    await launcher.open(url);
     const snapshot = await launcher.collect(collectCfg);
     await launcher.close();
 
     const findings = analyze(snapshot);
 
     if (output.json) {
-      console.log(output.format(renderJSON(snapshot, findings)));
+      console.log(output.format(renderJSON(snapshot, findings, brief)));
     } else {
-      console.log(renderMarkdown(snapshot, findings));
+      console.log(renderMarkdown(snapshot, findings, brief));
     }
   } catch (e: any) {
     output.error(e instanceof Error ? e.message : String(e));

@@ -24,10 +24,10 @@ cssprobe-cli skill-install
 
 ```bash
 # With explicit selector
-cssprobe-cli inspect https://example.com ".main-content"
+cssprobe-cli inspect https://getbootstrap.com/docs/5.3/examples/checkout ".container"
 
 # Auto-detect root element
-cssprobe-cli inspect https://example.com
+cssprobe-cli inspect https://getbootstrap.com/docs/5.3/examples/checkout
 
 # Local HTML file
 cssprobe-cli inspect ./test.html ".container"
@@ -49,8 +49,8 @@ cssprobe-cli inspect https://mysite.com/page ".target" --state ~/.cssprobe-cli/s
 ### 3. JSON Output
 
 ```bash
-cssprobe-cli inspect https://example.com ".content" --json
-cssprobe-cli --json inspect https://example.com ".content" | jq '.findings[] | {id, confidence, message}'
+cssprobe-cli inspect https://getbootstrap.com/docs/5.3/examples/checkout body --json
+cssprobe-cli inspect https://getbootstrap.com/docs/5.3/examples/checkout body --json | jq '.findings[] | {id, confidence, message}'
 ```
 
 ---
@@ -72,6 +72,12 @@ cssprobe-cli --json inspect https://example.com ".content" | jq '.findings[] | {
 cssprobe-cli inspect <url> [selector]    # Inspect CSS layout
 cssprobe-cli login <url>                 # Interactive login, save state
 cssprobe-cli state-import [file]         # Import cookies from Netscape format
+```
+
+### Inspection
+
+```bash
+cssprobe-cli inspect https://getbootstrap.com/docs/5.3/examples/checkout body
 ```
 
 ### Configuration
@@ -101,10 +107,11 @@ Options:
   --headed                    Show browser window
   --browser <engine>          chromium|firefox|webkit (default chromium)
   --zoom                      Run 1x/0.5x viewport diagnosis
-  --depth <n>                 DOM tree depth (default 6)
+  --depth <n>                 DOM tree depth (default: auto)
   --max-nodes <n>             Node count cap (default 60)
   --up-to <tag>               Ancestor stop tag (default html)
   --state <file>              Load saved state (cookies + localStorage)
+  --brief                     Compact output: tree sketch + warnings/errors only
 ```
 
 ---

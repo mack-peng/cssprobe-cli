@@ -27,7 +27,7 @@ npm install -g cssprobe-cli
 Or run without installing (slower but zero setup):
 
 ```bash
-npx cssprobe-cli inspect https://example.com ".content"
+npx cssprobe-cli inspect https://getbootstrap.com/docs/5.3/examples/checkout body
 ```
 
 Verify:
@@ -55,7 +55,7 @@ npx playwright install chromium
 Verify:
 
 ```bash
-cssprobe-cli inspect https://example.com "body" --json | head -5
+cssprobe-cli inspect https://getbootstrap.com/docs/5.3/examples/checkout body --json | head -5
 ```
 
 JSON output = it works. `Browser not installed` = run the install command above.
@@ -68,10 +68,10 @@ JSON output = it works. `Browser not installed` = run the install command above.
 
 ```bash
 # With explicit selector
-cssprobe-cli inspect https://example.com ".main-content"
+cssprobe-cli inspect https://getbootstrap.com/docs/5.3/examples/checkout body
 
 # Auto-detect root element
-cssprobe-cli inspect https://example.com
+cssprobe-cli inspect https://getbootstrap.com/docs/5.3/examples/checkout
 
 # Local HTML file
 cssprobe-cli inspect ./test.html ".container"
@@ -80,8 +80,8 @@ cssprobe-cli inspect ./test.html ".container"
 ### JSON Output (for programmatic consumption)
 
 ```bash
-cssprobe-cli inspect https://example.com ".content" --json
-cssprobe-cli --json inspect https://example.com ".content" | jq '.findings[] | {id, confidence, message}'
+cssprobe-cli inspect https://getbootstrap.com/docs/5.3/examples/checkout body --json
+cssprobe-cli inspect https://getbootstrap.com/docs/5.3/examples/checkout body --json | jq '.findings[] | {id, confidence, message}'
 ```
 
 ---
@@ -218,7 +218,7 @@ Priority (highest to lowest):
 For agents that trust copy-paste:
 
 ```bash
-npm install -g cssprobe-cli && npx playwright install chromium && cssprobe-cli inspect https://example.com "body"
+npm install -g cssprobe-cli && npx playwright install chromium && cssprobe-cli inspect https://getbootstrap.com/docs/5.3/examples/checkout body
 ```
 
 ---

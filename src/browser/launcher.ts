@@ -115,6 +115,22 @@ export class BrowserLauncher {
     return snapshot as Snapshot;
   }
 
+  /** Measure the DOM tree depth from a root selector to the deepest leaf. */
+  async measureDepth(selector: string): Promise<number> {
+    if (!this.page) throw new Error('Browser not opened. Call open() first.');
+    return this.page.evaluate((sel) => {
+      const root = document.querySelector(sel);
+      if (!root) return 0;
+      let maxDepth = 0;
+      const walk = (el: Element, depth: number) => {
+        if (depth > maxDepth) maxDepth = depth;
+        for (const child of Array.from(el.children)) walk(child, depth + 1);
+      };
+      walk(root, 0);
+      return maxDepth;
+    }, selector);
+  }
+
   /** Scan the page for likely root elements (modals, dialogs, scroll containers). */
   async autoDetectRoot(): Promise<string[]> {
     if (!this.page) throw new Error('Browser not opened. Call open() first.');
