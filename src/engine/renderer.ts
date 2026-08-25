@@ -157,6 +157,10 @@ function renderSketch(tree: TreeNode | null, findings: Finding[]): string[] {
 
 const BOX = { tl: '\u250C', tr: '\u2510', bl: '\u2514', br: '\u2518', h: '\u2500', v: '\u2502' } as const;
 
+function isFlexRow(node: TreeNode): boolean {
+  return node.shape?.role === 'flex-row' || (node.props.display === 'flex' && node.props.flexDirection !== 'column');
+}
+
 function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] {
   if (!snapshot.tree) return ['(empty tree)'];
 
@@ -164,7 +168,7 @@ function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] {
   const termWidth = Math.min(Math.max(process.stdout?.columns || 80, 60), 120);
   const indentUnit = 2;
   const maxDepth = 8;
-  const boxPad = 4; // '│ ' prefix per depth level
+  const boxPad = 4;
 
   const issueLocations = new Set<string>();
   for (const f of findings) {
@@ -180,6 +184,99 @@ function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] {
 
   const lines: string[] = [];
 
+  function renderBox(node: TreeNode, charW: number, depth: number): string[] {
+    const m = node.metrics.rect;
+    const label = nodeLabel(node);
+    const hasIssue = issueLocations.has(label);
+    const dimStr = `${Math.round(m.width)}\u00D7${Math.round(m.height)}`;
+    const innerW = charW - 2;
+    const issueMark = hasIssue ? ' \u26A0' : '';
+    const boxLines: string[] = [];
+
+    if (innerW < 3) {
+      boxLines.push(`${BOX.v} ${label.slice(0, charW - 3)}... ${dimStr}`);
+      return boxLines;
+    }
+
+    const labelPart = ` ${label} `;
+    const dimPart = ` ${dimStr} `;
+    const topFillLen = Math.max(0, innerW - labelPart.length);
+    boxLines.push(`${BOX.tl}${BOX.h}${labelPart}${BOX.h.repeat(topFillLen)}${BOX.tr}${dimPart}${issueMark}`);
+
+    // Children
+    const children = node.children.filter(c => !(c.metrics.rect.width < 1 && c.metrics.rect.height < 1));
+    if (children.length === 0) {
+      boxLines.push(`${BOX.v}${' '.repeat(innerW)}${BOX.v}`);
+    } else if (isFlexRow(node) && children.length > 1) {
+      // Flex-row: render children side-by-side
+      const childLines = renderFlexChildren(children, innerW, depth + 1, m.width);
+      for (const cl of childLines) {
+        boxLines.push(`${BOX.v}${cl}${BOX.v}`);
+      }
+    } else {
+      // Normal: render children nested
+      for (const child of children) {
+        const childBox = renderBox(child, boxCharW(child.metrics.rect.width, depth + 1), depth + 1);
+        for (const cl of childBox) {
+          boxLines.push(`${BOX.v} ${cl}`);
+        }
+      }
+    }
+
+    boxLines.push(`${BOX.bl}${BOX.h.repeat(innerW)}${BOX.br}`);
+    return boxLines;
+  }
+
+  function renderFlexChildren(children: TreeNode[], availW: number, depth: number, parentPxW: number): string[] {
+    // Calculate each child's width in characters (leave 1-char gap between boxes)
+    const gap = 1;
+    const totalGaps = (children.length - 1) * gap;
+    const usableW = availW - totalGaps;
+    const childWidths: number[] = [];
+    let totalUsed = 0;
+    for (let i = 0; i < children.length; i++) {
+      const ratio = children[i].metrics.rect.width / parentPxW;
+      const w = Math.max(Math.round(usableW * ratio), 8);
+      childWidths.push(w);
+      totalUsed += w;
+    }
+    if (childWidths.length > 0) {
+      childWidths[childWidths.length - 1] += usableW - totalUsed;
+    }
+
+    // Render each child's box
+    const childBoxes: string[][] = [];
+    let maxLines = 0;
+    for (let i = 0; i < children.length; i++) {
+      const box = renderBox(children[i], childWidths[i], depth);
+      childBoxes.push(box);
+      if (box.length > maxLines) maxLines = box.length;
+    }
+
+    // Pad all boxes to same height and merge side-by-side with gaps
+    const result: string[] = [];
+    for (let lineIdx = 0; lineIdx < maxLines; lineIdx++) {
+      let merged = '';
+      for (let i = 0; i < childBoxes.length; i++) {
+        const w = childWidths[i];
+        if (i > 0) merged += ' '; // gap between boxes
+        if (lineIdx < childBoxes[i].length) {
+          const line = childBoxes[i][lineIdx];
+          if (line.length < w) {
+            merged += line + ' '.repeat(w - line.length);
+          } else {
+            merged += line.slice(0, w);
+          }
+        } else {
+          merged += ' '.repeat(w);
+        }
+      }
+      result.push(merged);
+    }
+
+    return result;
+  }
+
   function renderEl(node: TreeNode, depth: number, parentW: number): void {
     if (depth > maxDepth) {
       lines.push('  '.repeat(depth) + '... (depth limit)');
@@ -187,44 +284,18 @@ function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] {
     }
 
     const m = node.metrics.rect;
-    // Skip zero-size elements (SVG symbols, hidden elements)
     if (m.width < 1 && m.height < 1 && node.children.length > 0) {
       for (const child of node.children) renderEl(child, depth, parentW);
       return;
     }
     if (m.width < 1 && m.height < 1) return;
 
-    const label = nodeLabel(node);
-    const hasIssue = issueLocations.has(label);
-    const dimStr = `${Math.round(m.width)}\u00D7${Math.round(m.height)}`;
     const charW = boxCharW(m.width, depth);
-    const innerW = charW - 2;
     const indent = '  '.repeat(depth);
-    const issueMark = hasIssue ? ' \u26A0' : '';
-
-    if (innerW < 3) {
-      // Too narrow for a proper box
-      lines.push(`${indent}${BOX.v} ${label.slice(0, charW - 3)}... ${dimStr}`);
-      for (const child of node.children) renderEl(child, depth + 1, m.width);
-      return;
+    const box = renderBox(node, charW, depth);
+    for (const line of box) {
+      lines.push(`${indent}${line}`);
     }
-
-    // Top border: ┌─ label ────────┐ WxH
-    const labelPart = ` ${label} `;
-    const dimPart = ` ${dimStr} `;
-    const topFillLen = Math.max(0, innerW - labelPart.length);
-    lines.push(`${indent}${BOX.tl}${BOX.h}${labelPart}${BOX.h.repeat(topFillLen)}${BOX.tr}${dimPart}${issueMark}`);
-
-    // Content
-    if (node.children.length === 0) {
-      // Empty box
-      lines.push(`${indent}${BOX.v}${' '.repeat(innerW)}${BOX.v}`);
-    } else {
-      for (const child of node.children) renderEl(child, depth + 1, m.width);
-    }
-
-    // Bottom border: └───────────────┘
-    lines.push(`${indent}${BOX.bl}${BOX.h.repeat(innerW)}${BOX.br}`);
   }
 
   renderEl(snapshot.tree, 0, vpW);
