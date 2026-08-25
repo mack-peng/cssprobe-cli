@@ -1,5 +1,5 @@
 import type { Snapshot, TreeNode, Finding } from '../types';
-import { nodeLabel, smartLabel, isFlexRow, BOX } from './utils';
+import { nodeLabel, smartLabel, isMultiColumn, BOX } from './utils';
 
 export function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] {
   if (!snapshot.tree) return ['(empty tree)'];
@@ -60,7 +60,7 @@ export function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] 
           boxLines.push(`${BOX.v}${childLine.slice(0, innerW)}${BOX.v}`);
         }
       }
-    } else if (isFlexRow(node)) {
+    } else if (isMultiColumn(node)) {
       // Calculate expanded count (considering repeat)
       const expandedCount = children.reduce((sum, c) => sum + (c.repeat && c.repeat > 1 ? c.repeat : 1), 0);
       if (expandedCount > 1) {
@@ -109,25 +109,34 @@ export function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] 
       }
     }
 
+    // Limit to max 6 columns for readability
+    const maxCols = 6;
+    const displayItems = expanded.slice(0, maxCols);
+    const omitted = expanded.length - displayItems.length;
+
     const gap = 1;
-    const totalGaps = (expanded.length - 1) * gap;
-    const usableW = Math.max(availW - totalGaps, expanded.length * 8);
+    const totalGaps = (displayItems.length - 1) * gap;
+    const minPerChild = 10;
+    const usableW = Math.max(availW - totalGaps, displayItems.length * minPerChild);
+
+    // Distribute width proportionally, with minimum
     const childWidths: number[] = [];
     let totalUsed = 0;
-    for (let i = 0; i < expanded.length; i++) {
-      const ratio = expanded[i].metrics.rect.width / parentPxW;
-      const w = Math.max(Math.round(usableW * ratio), 8);
+    for (let i = 0; i < displayItems.length; i++) {
+      const ratio = displayItems[i].metrics.rect.width / parentPxW;
+      const w = Math.max(Math.round(usableW * ratio), minPerChild);
       childWidths.push(w);
       totalUsed += w;
     }
-    if (childWidths.length > 0) {
+    // Adjust last child to fill remaining space (but not below minimum)
+    if (childWidths.length > 0 && usableW > totalUsed) {
       childWidths[childWidths.length - 1] += usableW - totalUsed;
     }
 
     const childBoxes: string[][] = [];
     let maxLines = 0;
-    for (let i = 0; i < expanded.length; i++) {
-      const box = renderBox(expanded[i], childWidths[i], depth, true);
+    for (let i = 0; i < displayItems.length; i++) {
+      const box = renderBox(displayItems[i], childWidths[i], depth, true);
       childBoxes.push(box);
       if (box.length > maxLines) maxLines = box.length;
     }
