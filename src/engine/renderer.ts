@@ -184,7 +184,7 @@ function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] {
 
   const lines: string[] = [];
 
-  function renderBox(node: TreeNode, charW: number, depth: number): string[] {
+  function renderBox(node: TreeNode, charW: number, depth: number, flat = false): string[] {
     const m = node.metrics.rect;
     const label = nodeLabel(node);
     const hasIssue = issueLocations.has(label);
@@ -207,6 +207,18 @@ function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] {
     const children = node.children.filter(c => !(c.metrics.rect.width < 1 && c.metrics.rect.height < 1));
     if (children.length === 0) {
       boxLines.push(`${BOX.v}${' '.repeat(innerW)}${BOX.v}`);
+    } else if (flat) {
+      // Flat mode: show children as simple list (no nested boxes)
+      for (const child of children) {
+        const childLabel = nodeLabel(child);
+        const childDim = `${Math.round(child.metrics.rect.width)}\u00D7${Math.round(child.metrics.rect.height)}`;
+        const childLine = ` ${childLabel} ${childDim} `;
+        if (childLine.length <= innerW) {
+          boxLines.push(`${BOX.v}${childLine}${' '.repeat(innerW - childLine.length)}${BOX.v}`);
+        } else {
+          boxLines.push(`${BOX.v}${childLine.slice(0, innerW)}${BOX.v}`);
+        }
+      }
     } else if (isFlexRow(node) && children.length > 1) {
       // Flex-row: render children side-by-side
       const childLines = renderFlexChildren(children, innerW, depth + 1, m.width);
@@ -216,9 +228,14 @@ function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] {
     } else {
       // Normal: render children nested
       for (const child of children) {
-        const childBox = renderBox(child, boxCharW(child.metrics.rect.width, depth + 1), depth + 1);
+        const childBox = renderBox(child, Math.min(boxCharW(child.metrics.rect.width, depth + 1), innerW - 2), depth + 1);
         for (const cl of childBox) {
-          boxLines.push(`${BOX.v} ${cl}`);
+          const line = ` ${cl}`;
+          if (line.length <= innerW + 1) {
+            boxLines.push(`${BOX.v}${line}${' '.repeat(Math.max(0, innerW - line.length + 1))}${BOX.v}`);
+          } else {
+            boxLines.push(`${BOX.v}${line.slice(0, innerW)}${BOX.v}`);
+          }
         }
       }
     }
@@ -228,7 +245,6 @@ function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] {
   }
 
   function renderFlexChildren(children: TreeNode[], availW: number, depth: number, parentPxW: number): string[] {
-    // Calculate each child's width in characters (leave 1-char gap between boxes)
     const gap = 1;
     const totalGaps = (children.length - 1) * gap;
     const usableW = availW - totalGaps;
@@ -244,11 +260,11 @@ function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] {
       childWidths[childWidths.length - 1] += usableW - totalUsed;
     }
 
-    // Render each child's box
+    // Render each child's box in flat mode (no nested expansion)
     const childBoxes: string[][] = [];
     let maxLines = 0;
     for (let i = 0; i < children.length; i++) {
-      const box = renderBox(children[i], childWidths[i], depth);
+      const box = renderBox(children[i], childWidths[i], depth, true);
       childBoxes.push(box);
       if (box.length > maxLines) maxLines = box.length;
     }
@@ -259,7 +275,7 @@ function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] {
       let merged = '';
       for (let i = 0; i < childBoxes.length; i++) {
         const w = childWidths[i];
-        if (i > 0) merged += ' '; // gap between boxes
+        if (i > 0) merged += ' ';
         if (lineIdx < childBoxes[i].length) {
           const line = childBoxes[i][lineIdx];
           if (line.length < w) {
