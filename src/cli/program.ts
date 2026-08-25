@@ -152,7 +152,7 @@ async function handleInspect(
     // Auto-detect root selector if not provided
     let rootSelector = selector;
     if (!rootSelector) {
-      const detected = await autoDetectRoot(url, { browser, headed, state });
+      const detected = await autoDetectRoot(url, { browser, headed, state, viewport: config.viewport });
       if (!detected) {
         output.error('Could not auto-detect a root element. Please provide a selector: cssprobe-cli inspect <url> <selector>');
         return;
@@ -161,7 +161,7 @@ async function handleInspect(
       console.error(`Auto-detected root: ${rootSelector}`);
     }
 
-    const launcher = new BrowserLauncher({ browser, headed, state });
+    const launcher = new BrowserLauncher({ browser, headed, state, viewport: config.viewport });
     await launcher.open(url);
 
     // Wait for user interaction if --wait
@@ -198,7 +198,7 @@ async function handleInspect(
   }
 }
 
-async function autoDetectRoot(url: string, opts: { browser: string; headed: boolean; state?: string }): Promise<string | null> {
+async function autoDetectRoot(url: string, opts: { browser: string; headed: boolean; state?: string; viewport?: { width: number; height: number } }): Promise<string | null> {
   const launcher = new BrowserLauncher(opts);
   try {
     await launcher.open(url);
@@ -529,7 +529,8 @@ async function handleInteractive(
     process.exit(1);
   }
 
-  const launcher = new BrowserLauncher({ browser, headed: true, state });
+  const config = loadConfig(args);
+  const launcher = new BrowserLauncher({ browser, headed: true, state, viewport: config.viewport });
   await launcher.open(url);
   let currentUrl = url;
 

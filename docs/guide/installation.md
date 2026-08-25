@@ -238,12 +238,13 @@ confidence: DEFINITE 8 | INDEFINITE 0 | UNVERIFIABLE 1
 export CSSPROBE_BROWSER=chromium
 export CSSPROBE_DEPTH=6
 export CSSPROBE_HEADED=true
+export CSSPROBE_VIEWPORT=375x812
 export CSSPROBE_PROFILE=default
 ```
 
 Priority (highest to lowest):
-1. CLI flags: `--browser`, `--depth`, `--headed`
-2. Environment variables: `CSSPROBE_BROWSER`, `CSSPROBE_DEPTH`, `CSSPROBE_HEADED`
+1. CLI flags: `--browser`, `--depth`, `--headed`, `--viewport`
+2. Environment variables: `CSSPROBE_BROWSER`, `CSSPROBE_DEPTH`, `CSSPROBE_HEADED`, `CSSPROBE_VIEWPORT`
 3. Config file: `~/.cssprobe-clirc`
 
 ---

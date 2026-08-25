@@ -34,6 +34,7 @@ const inspect = declareCommand({
     brief: z.boolean().optional().describe('compact output: tree sketch + warnings/errors only'),
     layout: z.boolean().optional().describe('ASCII layout diagram showing element positions and sizes'),
     wait: z.boolean().optional().describe('wait for user interaction before collecting (implies --headed)'),
+    viewport: z.string().optional().describe('viewport size as WxH (e.g. 375x812, default 1280x720)'),
   }),
 });
 
@@ -66,7 +67,7 @@ const configSet = declareCommand({
   category: 'config',
   description: 'Set a configuration value',
   args: z.object({
-    key: z.string().describe('Config key (browser, depth, headed)'),
+    key: z.string().describe('Config key (browser, depth, headed, viewport)'),
     value: z.string().describe('Config value'),
   }),
   options: z.object({
@@ -152,6 +153,7 @@ const interactive = declareCommand({
     browser: z.enum(['chromium', 'firefox', 'webkit']).optional().describe('browser engine (default chromium)'),
     state: z.string().optional().describe('path to saved state file (cookies + localStorage)'),
     depth: numberArg.optional().describe('DOM tree depth (default: auto, max 20)'),
+    viewport: z.string().optional().describe('viewport size as WxH (e.g. 375x812, default 1280x720)'),
   }),
 });
 
