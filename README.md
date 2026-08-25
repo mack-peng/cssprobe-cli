@@ -44,9 +44,34 @@ cssprobe-cli login https://mysite.com
 
 # Then inspect with state
 cssprobe-cli inspect https://mysite.com/page ".target" --state ~/.cssprobe-cli/states/mysite.json
+
+# Wait for user interaction before collecting (e.g. click a button to open a dialog)
+cssprobe-cli inspect https://mysite.com/page ".dialog" --state ~/.cssprobe-cli/states/mysite.json --wait
 ```
 
-### 3. JSON Output
+### 3. Interactive Mode
+
+```bash
+# Open browser and inspect interactively (REPL mode)
+cssprobe-cli interactive https://mysite.com --state ~/.cssprobe-cli/states/mysite.json
+```
+
+Runtime commands:
+```
+inspect> tree .dialog-A               # DOM tree
+inspect> layout .sidebar-B            # ASCII layout diagram
+inspect> sketch .content              # Tree sketch (issues only)
+inspect> findings .modal              # Findings only
+inspect> json .dialog-A               # JSON output
+inspect> report .dialog-A             # Full report
+inspect> .dialog-A                    # Shorthand for report
+inspect> navigate https://other.com   # Navigate to new URL
+inspect> depth 10                     # Set depth
+inspect> help                         # Show help
+inspect> quit                         # Exit
+```
+
+### 4. JSON Output
 
 ```bash
 cssprobe-cli inspect https://getbootstrap.com/docs/5.3/examples/checkout body --json
@@ -61,6 +86,8 @@ cssprobe-cli inspect https://getbootstrap.com/docs/5.3/examples/checkout body --
 |------|--------|----------|
 | (default) | Markdown report with ancestor chain, DOM tree, findings | Terminal viewing |
 | `--json` | Structured JSON with snapshot, findings, confidence summary | Scripts, `jq` pipes, AI agent consumption |
+| `--brief` | Compact output: tree sketch + warnings/errors only | Quick overview |
+| `--layout` | ASCII layout diagram showing element positions and sizes | Visual layout inspection |
 
 ---
 
@@ -70,6 +97,7 @@ cssprobe-cli inspect https://getbootstrap.com/docs/5.3/examples/checkout body --
 
 ```bash
 cssprobe-cli inspect <url> [selector]    # Inspect CSS layout
+cssprobe-cli interactive <url>           # Interactive REPL mode
 cssprobe-cli login <url>                 # Interactive login, save state
 cssprobe-cli state-import [file]         # Import cookies from Netscape format
 ```
@@ -112,6 +140,8 @@ Options:
   --up-to <tag>               Ancestor stop tag (default html)
   --state <file>              Load saved state (cookies + localStorage)
   --brief                     Compact output: tree sketch + warnings/errors only
+  --layout                    ASCII layout diagram showing element positions and sizes
+  --wait                      Wait for user interaction before collecting (implies --headed)
 ```
 
 ---
