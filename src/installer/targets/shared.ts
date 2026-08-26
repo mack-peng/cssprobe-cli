@@ -17,7 +17,7 @@ export function atomicWriteFileSync(filePath: string, content: string): void {
   }
 }
 
-export function writeSkill(skillDir: string): { path: string; action: 'created' | 'updated' | 'unchanged' } {
+export function writeSkill(skillDir: string): { path: string; action: 'created' | 'updated' } {
   const skillRoot = path.join(skillDir, SKILL_NAME);
   const skillMdPath = path.join(skillRoot, 'SKILL.md');
   const refsDir = path.join(skillRoot, 'references');
@@ -25,12 +25,6 @@ export function writeSkill(skillDir: string): { path: string; action: 'created' 
 
   const skillMdContent = buildSkillMd();
   const pitfallsContent = buildPitfallsMd();
-
-  const existingSkill = safeRead(skillMdPath);
-  const existingPitfalls = safeRead(pitfallsPath);
-
-  if (existingSkill === skillMdContent && existingPitfalls === pitfallsContent)
-    return { path: skillRoot, action: 'unchanged' };
 
   const existed = fs.existsSync(skillMdPath);
   if (!fs.existsSync(refsDir)) fs.mkdirSync(refsDir, { recursive: true });

@@ -5,7 +5,7 @@ export type TargetId = 'claude' | 'opencode' | 'cursor' | 'codex' | 'hermes' | '
 export interface WriteResult {
   files: Array<{
     path: string;
-    action: 'created' | 'updated' | 'unchanged' | 'removed' | 'not-found' | 'kept';
+    action: 'created' | 'updated' | 'removed' | 'not-found' | 'kept';
   }>;
   notes?: string[];
 }
