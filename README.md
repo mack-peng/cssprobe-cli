@@ -23,100 +23,137 @@ cssprobe-cli skill-install
 ### 1. Inspect a Page
 
 ```bash
-# With explicit selector
-cssprobe-cli inspect https://getbootstrap.com/docs/5.3/examples/checkout ".container"
+# Open browser (non-blocking, starts daemon session)
+cssprobe-cli open https://getbootstrap.com/docs/5.3/examples/checkout
 
-# Auto-detect root element
-cssprobe-cli inspect https://getbootstrap.com/docs/5.3/examples/checkout
+# Inspect with CSS selector
+cssprobe-cli inspect .container
 
-# Local HTML file
-cssprobe-cli inspect ./test.html ".container"
+# Show DOM tree
+cssprobe-cli tree .container --depth 3
+
+# Show ASCII layout diagram
+cssprobe-cli layout .container
+
+# Show only issues/warnings
+cssprobe-cli findings .container
+
+# Close browser when done
+cssprobe-cli close
 ```
 
 ### 2. Login-Protected Pages
 
 ```bash
-# Import cookies from browser export (Netscape format)
-cssprobe-cli state-import cookies.txt --out ~/.cssprobe-cli/states/mysite.json
+# Open browser in headed mode
+cssprobe-cli open https://mysite.com --headed
 
-# Or interactive login
-cssprobe-cli login https://mysite.com
+# User manually logs in...
 
-# Then inspect with state
-cssprobe-cli inspect https://mysite.com/page ".target" --state ~/.cssprobe-cli/states/mysite.json
+# Run diagnosis on authenticated page
+cssprobe-cli inspect .dashboard
 
-# Wait for user interaction before collecting (e.g. click a button to open a dialog)
-cssprobe-cli inspect https://mysite.com/page ".dialog" --state ~/.cssprobe-cli/states/mysite.json --wait
+# Inject CSS to test changes
+cssprobe-cli inject-css ".sidebar { background: #f0f0f0; }"
+
+# Take screenshot
+cssprobe-cli screenshot
+
+# Close when done
+cssprobe-cli close
 ```
 
-### 3. Interactive Mode
+### 3. Import Cookies
 
 ```bash
-# Open browser and inspect interactively (REPL mode)
-cssprobe-cli interactive https://mysite.com --state ~/.cssprobe-cli/states/mysite.json
-```
-
-Runtime commands:
-```
-inspect> tree .dialog-A               # DOM tree
-inspect> layout .sidebar-B            # ASCII layout diagram
-inspect> sketch .content              # Tree sketch (issues only)
-inspect> findings .modal              # Findings only
-inspect> json .dialog-A               # JSON output
-inspect> report .dialog-A             # Full report
-inspect> .dialog-A                    # Shorthand for report
-inspect> navigate https://other.com   # Navigate to new URL
-inspect> depth 10                     # Set depth
-inspect> help                         # Show help
-inspect> quit                         # Exit
+# Import cookies from browser export (Netscape format)
+cssprobe-cli state-import cookies.txt --out ~/.cssprobe-cli/states/mysite.json
 ```
 
 ### 4. JSON Output
 
 ```bash
-cssprobe-cli inspect https://getbootstrap.com/docs/5.3/examples/checkout body --json
-cssprobe-cli inspect https://getbootstrap.com/docs/5.3/examples/checkout body --json | jq '.findings[] | {id, confidence, message}'
+cssprobe-cli open https://getbootstrap.com/docs/5.3/examples/checkout
+cssprobe-cli inspect body --json
+cssprobe-cli inspect body --json | jq '.findings[] | {id, confidence, message}'
+cssprobe-cli close
 ```
 
 ---
 
-## Output Modes
+## Session Mode
 
-| Flag | Output | Use Case |
-|------|--------|----------|
-| (default) | Markdown report with ancestor chain, DOM tree, findings | Terminal viewing |
-| `--json` | Structured JSON with snapshot, findings, confidence summary | Scripts, `jq` pipes, AI agent consumption |
-| `--brief` | Compact output: tree sketch + warnings/errors only | Quick overview |
-| `--layout` | ASCII layout diagram showing element positions and sizes | Visual layout inspection |
+cssprobe-cli uses a session-based architecture for non-browser interaction:
+
+```bash
+# Start session (opens browser, returns immediately)
+cssprobe-cli open <url>
+
+# Run commands (each command is independent, non-blocking)
+cssprobe-cli inspect <selector>
+cssprobe-cli tree <selector>
+cssprobe-cli layout <selector>
+cssprobe-cli findings <selector>
+cssprobe-cli inject-css <css>
+cssprobe-cli screenshot
+cssprobe-cli eval <expression>
+
+# Check session status
+cssprobe-cli status
+
+# End session (closes browser)
+cssprobe-cli close
+```
 
 ---
 
 ## Commands
 
-### Inspection
+### Session Management
 
 ```bash
-cssprobe-cli inspect <url> [selector]    # Inspect CSS layout
-cssprobe-cli interactive <url>           # Interactive REPL mode
-cssprobe-cli login <url>                 # Interactive login, save state
-cssprobe-cli state-import [file]         # Import cookies from Netscape format
+cssprobe-cli open [url]           # Open browser in session mode (non-blocking)
+cssprobe-cli close                # Close browser session
+cssprobe-cli status               # Show session status
 ```
 
-### Inspection
+### CSS Inspection
 
 ```bash
-cssprobe-cli inspect https://getbootstrap.com/docs/5.3/examples/checkout body
+cssprobe-cli inspect <selector>   # Full CSS diagnosis
+cssprobe-cli tree <selector>      # DOM tree structure
+cssprobe-cli layout <selector>    # ASCII layout diagram
+cssprobe-cli findings <selector>  # Only issues/warnings/errors
+```
+
+### CSS Injection
+
+```bash
+cssprobe-cli inject-css <css>     # Inject CSS into current page
+```
+
+### Browser
+
+```bash
+cssprobe-cli screenshot           # Take screenshot
+cssprobe-cli eval <expression>    # Evaluate JavaScript
+```
+
+### State
+
+```bash
+cssprobe-cli state-import [file]  # Import cookies from Netscape format
 ```
 
 ### Configuration
 
 ```bash
-cssprobe-cli config-show                 # Show current config
-cssprobe-cli config-set <key> <value>    # Set config value
-cssprobe-cli config-list                 # List all profiles
-cssprobe-cli config-use <name>           # Switch active profile
-cssprobe-cli config-new <name>           # Create new profile
-cssprobe-cli config-path                 # Show config file path
+cssprobe-cli config-show          # Show current config
+cssprobe-cli config-set <key> <value>  # Set config value
+cssprobe-cli config-list          # List all profiles
+cssprobe-cli config-use <name>    # Switch active profile
+cssprobe-cli config-new <name>    # Create new profile
+cssprobe-cli config-path          # Show config file path
 ```
 
 ---
@@ -124,25 +161,41 @@ cssprobe-cli config-path                 # Show config file path
 ## inspect Options
 
 ```bash
-cssprobe-cli inspect <url> [selector] [options]
+cssprobe-cli inspect <selector> [options]
 
 Arguments:
-  <url>                       URL, file:// path, or local HTML file
-  [selector]                  CSS selector for root (auto-detected if omitted)
+  <selector>                  CSS selector for root element
 
 Options:
   --json                      Output structured JSON
-  --headed                    Show browser window
-  --browser <engine>          chromium|firefox|webkit (default chromium)
-  --zoom                      Run 1x/0.5x viewport diagnosis
-  --depth <n>                 DOM tree depth (default: auto)
-  --max-nodes <n>             Node count cap (default 60)
-  --up-to <tag>               Ancestor stop tag (default html)
-  --state <file>              Load saved state (cookies + localStorage)
   --brief                     Compact output: tree sketch + warnings/errors only
-  --layout                    ASCII layout diagram showing element positions and sizes
-  --wait                      Wait for user interaction before collecting (implies --headed)
-  --viewport <WxH>            Viewport size (e.g. 375x812, default 1280x720)
+  --layout                    ASCII layout diagram
+  --depth <n>                 DOM tree depth (default: auto, max 20)
+```
+
+---
+
+## tree Options
+
+```bash
+cssprobe-cli tree <selector> [options]
+
+Arguments:
+  <selector>                  CSS selector for root element
+
+Options:
+  --depth <n>                 Tree depth (default: auto, max 20)
+```
+
+---
+
+## inject-css
+
+```bash
+cssprobe-cli inject-css <css>
+
+Arguments:
+  <css>                       CSS code to inject into the current page
 ```
 
 ---
@@ -248,8 +301,8 @@ cssprobe-cli skill-uninstall
 
 ```bash
 npm install
-npm run build       # tsc + esbuild collector bundle + generate help.json
-npm test            # Run unit tests
+npm run build       # tsc + esbuild collector + daemon entry + generate help.json
+npm test            # Run unit tests (45 tests)
 npx tsc --noEmit    # Type check only
 ```
 

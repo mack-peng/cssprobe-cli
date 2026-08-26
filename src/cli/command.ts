@@ -1,7 +1,7 @@
 import * as z from 'zod';
 import type zodType from 'zod';
 
-export type Category = 'core' | 'config' | 'skill';
+export type Category = 'core' | 'config' | 'skill' | 'cssprobe' | 'export';
 
 export interface HelpEntry {
   help: string;

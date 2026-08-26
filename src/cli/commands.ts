@@ -12,42 +12,121 @@ const numberArg = z.preprocess((val, ctx) => {
 
 const urlArg = z.string().describe('URL, file:// path, or local HTML file path');
 
-// ── core ──
+// ── session management ──
 
-const inspect = declareCommand({
-  name: 'inspect',
+const open = declareCommand({
+  name: 'open',
   category: 'core',
-  description: 'Inspect the runtime CSS of a page (layout, scroll, colors, fonts, backgrounds)',
+  description: 'Open browser in session mode (non-blocking)',
   args: z.object({
-    url: urlArg,
-    selector: z.string().optional().describe('CSS selector for the root element (auto-detected if omitted)'),
+    url: urlArg.optional(),
   }),
   options: z.object({
-    json: z.boolean().optional().describe('output structured JSON instead of Markdown'),
-    headed: z.boolean().optional().describe('show the browser window'),
     browser: z.enum(['chromium', 'firefox', 'webkit']).optional().describe('browser engine (default chromium)'),
-    zoom: z.boolean().optional().describe('run 1x/0.5x viewport diagnosis'),
-    depth: numberArg.optional().describe('DOM tree depth (default: auto, max 20)'),
-    'max-nodes': numberArg.optional().describe('node count cap (default 60)'),
-    'up-to': z.string().optional().describe('ancestor stop tag (default html)'),
-    state: z.string().optional().describe('path to saved state file (cookies + localStorage)'),
-    brief: z.boolean().optional().describe('compact output: tree sketch + warnings/errors only'),
-    layout: z.boolean().optional().describe('ASCII layout diagram showing element positions and sizes'),
-    wait: z.boolean().optional().describe('wait for user interaction before collecting (implies --headed)'),
-    viewport: z.string().optional().describe('viewport size as WxH (e.g. 375x812, default 1280x720)'),
+    headed: z.boolean().optional().describe('show the browser window'),
   }),
 });
 
-const login = declareCommand({
-  name: 'login',
+const close = declareCommand({
+  name: 'close',
   category: 'core',
-  description: 'Open browser for interactive login, then save state for later use',
+  description: 'Close the browser session',
+});
+
+const status = declareCommand({
+  name: 'status',
+  category: 'core',
+  description: 'Show current session status',
+});
+
+// ── cssprobe commands ──
+
+const inspect = declareCommand({
+  name: 'inspect',
+  category: 'cssprobe',
+  description: 'Inspect the runtime CSS of a page element',
   args: z.object({
-    url: urlArg,
+    selector: z.string().describe('CSS selector for the root element'),
   }),
   options: z.object({
-    browser: z.enum(['chromium', 'firefox', 'webkit']).optional().describe('browser engine (default chromium)'),
-    out: z.string().optional().describe('output state file path (default: ~/.cssprobe-cli/states/<domain>.json)'),
+    json: z.boolean().optional().describe('output structured JSON instead of Markdown'),
+    brief: z.boolean().optional().describe('compact output: tree sketch + warnings/errors only'),
+    layout: z.boolean().optional().describe('ASCII layout diagram showing element positions and sizes'),
+    depth: numberArg.optional().describe('DOM tree depth (default: auto, max 20)'),
+  }),
+});
+
+const tree = declareCommand({
+  name: 'tree',
+  category: 'cssprobe',
+  description: 'Show DOM tree structure',
+  args: z.object({
+    selector: z.string().describe('CSS selector for the root element'),
+  }),
+  options: z.object({
+    depth: numberArg.optional().describe('tree depth (default: auto, max 20)'),
+  }),
+});
+
+const layout = declareCommand({
+  name: 'layout',
+  category: 'cssprobe',
+  description: 'Show ASCII layout diagram',
+  args: z.object({
+    selector: z.string().describe('CSS selector for the root element'),
+  }),
+});
+
+const findings = declareCommand({
+  name: 'findings',
+  category: 'cssprobe',
+  description: 'Show only issues/warnings/errors',
+  args: z.object({
+    selector: z.string().describe('CSS selector for the root element'),
+  }),
+});
+
+const injectCss = declareCommand({
+  name: 'inject-css',
+  category: 'cssprobe',
+  description: 'Inject CSS into the current page',
+  args: z.object({
+    css: z.string().describe('CSS code to inject'),
+  }),
+});
+
+// ── browser commands ──
+
+const screenshot = declareCommand({
+  name: 'screenshot',
+  category: 'export',
+  description: 'Take a screenshot of the current page',
+  options: z.object({
+    'full-page': z.boolean().optional().describe('take screenshot of the full scrollable page'),
+  }),
+});
+
+const evalCmd = declareCommand({
+  name: 'eval',
+  category: 'core',
+  description: 'Evaluate JavaScript expression on the page',
+  args: z.object({
+    expression: z.string().describe('JavaScript expression to evaluate'),
+  }),
+});
+
+// ── state management ──
+
+const stateImport = declareCommand({
+  name: 'state-import',
+  category: 'core',
+  description: 'Import cookies from Netscape format file',
+  args: z.object({
+    file: z.string().optional().describe('Netscape cookie file path (reads from stdin if omitted)'),
+  }),
+  options: z.object({
+    out: z.string().optional().describe('output state file path (default: ~/.cssprobe-cli/states/imported.json)'),
+    merge: z.string().optional().describe('existing state file to merge into'),
   }),
 });
 
@@ -110,7 +189,7 @@ const configPath = declareCommand({
 const skillInstall = declareCommand({
   name: 'skill-install',
   category: 'skill',
-  description: 'Install Agent Skill for cssprobe-cli (teaches agents how to use the CLI)',
+  description: 'Install Agent Skill for cssprobe-cli',
   options: z.object({
     target: z.string().optional().describe('agent target: auto, all, opencode, claude, codex, cursor, hermes, gemini (default: auto)'),
     local: z.boolean().optional().describe('install to current directory instead of home'),
@@ -129,37 +208,20 @@ const skillUninstall = declareCommand({
   }),
 });
 
-const stateImport = declareCommand({
-  name: 'state-import',
-  category: 'core',
-  description: 'Import cookies from Netscape format file into a Playwright state file',
-  args: z.object({
-    file: z.string().optional().describe('Netscape cookie file path (reads from stdin if omitted)'),
-  }),
-  options: z.object({
-    out: z.string().optional().describe('output state file path (default: ~/.cssprobe-cli/states/imported.json)'),
-    merge: z.string().optional().describe('existing state file to merge into'),
-  }),
-});
-
-const interactive = declareCommand({
-  name: 'interactive',
-  category: 'core',
-  description: 'Open browser and inspect interactively (REPL mode)',
-  args: z.object({
-    url: urlArg,
-  }),
-  options: z.object({
-    browser: z.enum(['chromium', 'firefox', 'webkit']).optional().describe('browser engine (default chromium)'),
-    state: z.string().optional().describe('path to saved state file (cookies + localStorage)'),
-    depth: numberArg.optional().describe('DOM tree depth (default: auto, max 20)'),
-    viewport: z.string().optional().describe('viewport size as WxH (e.g. 375x812, default 1280x720)'),
-  }),
-});
+// ── export ──
 
 const commandsArray: AnyCommandSchema[] = [
-  inspect, login, stateImport, interactive,
+  // session management
+  open, close, status,
+  // cssprobe
+  inspect, tree, layout, findings, injectCss,
+  // browser
+  screenshot, evalCmd,
+  // state
+  stateImport,
+  // config
   configShow, configSet, configList, configUse, configNew, configPath,
+  // skill
   skillInstall, skillUninstall,
 ];
 
