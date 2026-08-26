@@ -303,15 +303,7 @@ async function handleSessionCommand(
     if (args.json) runArgs.json = true;
     const result = await session.run(runArgs);
 
-    if (output.json) {
-      try {
-        console.log(JSON.parse(result.text));
-      } catch {
-        console.log(result.text);
-      }
-    } else {
-      console.log(result.text);
-    }
+    console.log(result.text);
   } catch (e: any) {
     output.error(e instanceof Error ? e.message : String(e));
   }
