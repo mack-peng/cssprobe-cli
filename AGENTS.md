@@ -55,6 +55,7 @@ src/
 
 ### Session Management
 - `open [url]` — Open browser in session mode (non-blocking)
+  - `--viewport <WxH>` — Set viewport size (e.g. `--viewport 1280x720`)
 - `close` — Close the browser session
 - `status` — Show current session status
 
@@ -68,8 +69,10 @@ src/
 - `inject-css <css>` — Inject CSS into the current page
 
 ### Browser
+- `resize <width> <height>` — Resize browser viewport
+- `eval <expression>` — Evaluate JavaScript (browser context)
+- `playwright <call>` — Execute Playwright API call (Node.js context)
 - `screenshot` — Take a screenshot
-- `eval <expression>` — Evaluate JavaScript
 
 ### State
 - `state-import [file]` — Import cookies from Netscape format

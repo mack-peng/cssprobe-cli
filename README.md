@@ -26,6 +26,9 @@ cssprobe-cli skill-install
 # Open browser (non-blocking, starts daemon session)
 cssprobe-cli open https://getbootstrap.com/docs/5.3/examples/checkout
 
+# Open with custom viewport
+cssprobe-cli open https://example.com --viewport 1280x720
+
 # Inspect with CSS selector
 cssprobe-cli inspect .container
 
@@ -113,6 +116,7 @@ cssprobe-cli close
 
 ```bash
 cssprobe-cli open [url]           # Open browser in session mode (non-blocking)
+cssprobe-cli open [url] --viewport 1280x720  # Open with custom viewport
 cssprobe-cli close                # Close browser session
 cssprobe-cli status               # Show session status
 ```
@@ -135,8 +139,10 @@ cssprobe-cli inject-css <css>     # Inject CSS into current page
 ### Browser
 
 ```bash
+cssprobe-cli resize <width> <height>  # Resize browser viewport
+cssprobe-cli eval <expression>    # Evaluate JavaScript (browser context)
+cssprobe-cli playwright <call>    # Execute Playwright API (Node.js context)
 cssprobe-cli screenshot           # Take screenshot
-cssprobe-cli eval <expression>    # Evaluate JavaScript
 ```
 
 ### State
