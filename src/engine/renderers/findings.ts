@@ -5,7 +5,7 @@ export function renderFindings(findings: Finding[]): string[] {
   const lines: string[] = [];
   lines.push('## Findings');
   if (findings.length === 0) {
-    lines.push('- 无异常发现');
+    lines.push('- No issues found');
     return lines;
   }
   for (const f of findings) {

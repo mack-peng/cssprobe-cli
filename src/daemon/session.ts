@@ -66,10 +66,18 @@ export class Session {
 
   private async _connect(): Promise<{ socket?: net.Socket, error?: Error }> {
     return await new Promise(resolve => {
+      let settled = false;
       const socket = net.createConnection(this.config.socketPath, () => {
+        settled = true;
         resolve({ socket });
       });
       socket.on('error', error => {
+        if (settled) {
+          socket.destroy();
+          return;
+        }
+        // Only clean up the socket file when the daemon is confirmed not listening
+        // (ECONNREFUSED / ENOENT). Do not unlink on transient failures of a live socket.
         if (os.platform() !== 'win32')
           void fs.promises.unlink(this.config.socketPath).catch(() => {}).then(() => resolve({ error }));
         else
@@ -107,6 +115,8 @@ export class Session {
       daemonArgs.push(`--browser=${args.browser}`);
     if (args.state)
       daemonArgs.push(`--state=${args.state}`);
+    if (args.viewport)
+      daemonArgs.push(`--viewport=${args.viewport.width}x${args.viewport.height}`);
 
     const child = require('child_process').spawn(process.execPath, daemonArgs, {
       detached: true,

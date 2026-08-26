@@ -4,7 +4,7 @@
 
 `cssprobe-cli` — Runtime CSS probe for layout/scroll/overflow/color/font inspection with session-based browser management. Entrypoint: `bin/cssprobe-cli.js` → `require('../dist/index')`.
 Build: `npm run build` (= `tsc` + `esbuild` collector IIFE bundle + `esbuild` daemon entry + `tsx scripts/generate-help.ts`).
-Test: `npm test` (= `tsx --test tests/*.test.ts` — Node.js built-in test runner, 45 tests).
+Test: `npm test` (= `tsx --test tests/*.test.ts` — Node.js built-in test runner, 58 tests).
 Dependencies: `playwright-core`, `zod`. Dev: `typescript`, `@types/node`, `tsx`, `esbuild`.
 
 ## Architecture
@@ -41,7 +41,7 @@ src/
 - **Session-based architecture**: Inspired by playwright-cli. `open` starts a daemon process, subsequent commands connect via Unix socket. Single session (default) mode.
 - **Daemon process**: Long-running background process that manages the browser and executes commands. Communicates via Unix domain socket.
 - **Three-layer engine**: `collector.ts` (browser, esbuild IIFE) → `analyzer.ts` (Node, pure functions) → `renderer.ts` (Markdown/JSON). Collector only gathers facts; analyzer does inference with confidence; renderer formats output.
-- **Collector bundling**: `collector.ts` is bundled by esbuild as an IIFE (`format: 'iife', globalName: '__cssprobe-cli'`). The launcher injects it via `page.addScriptTag({ content })`, then calls `window.__cssprobe-cli.collect(cfg)`.
+- **Collector bundling**: `collector.ts` is bundled by esbuild as an IIFE (`format: 'iife', globalName: '__cssprobe_cli'`). The launcher injects it via `page.addScriptTag({ content })`, then calls `window.__cssprobe_cli.collect(cfg)`.
 - **Confidence model**: Every `Finding` carries `confidence: 'DEFINITE' | 'INDEFINITE' | 'UNVERIFIABLE'`. Computed values = DEFINITE. Percent declarations = INDEFINITE. Missing/blocked declarations = UNVERIFIABLE.
 - **Command definition**: `declareCommand({ name, category, description, args?, options? })` — purely declarative, no execution logic.
 - **Command dispatch**: `minimist` parse → `parseCommand()` Zod validate → session command execution via daemon socket.
@@ -101,11 +101,10 @@ src/
 npm run build
 ├── 1. tsc                    # Compile TS → dist/ (includes .d.ts)
 ├── 2. esbuild collector.ts   # Bundle browser-side code → dist/collector-bundle.js (IIFE)
-├── 3. esbuild daemonEntry.ts # Bundle daemon entry → dist/daemonEntry.js (CJS)
-└── 4. tsx generate-help.ts   # Zod schemas → dist/help.json
+└── 3. tsx generate-help.ts   # Zod schemas → dist/help.json
 ```
 
-The collector bundle is a self-contained IIFE that exposes `window.__cssprobe-cli.collect(cfg)`. It runs entirely in the browser context — no Node imports.
+The collector bundle is a self-contained IIFE that exposes `window.__cssprobe_cli.collect(cfg)`. It runs entirely in the browser context — no Node imports.
 
 ## Session Mode
 

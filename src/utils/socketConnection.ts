@@ -66,17 +66,3 @@ export class SocketConnection {
     }
   }
 }
-
-export function compareSemver(a: string, b: string): number {
-  const aBase = a.replace(/-.*$/, '');
-  const bBase = b.replace(/-.*$/, '');
-  const aParts = aBase.split('.').map(Number);
-  const bParts = bBase.split('.').map(Number);
-  for (let i = 0; i < 3; i++) {
-    if (aParts[i] > bParts[i])
-      return 1;
-    if (aParts[i] < bParts[i])
-      return -1;
-  }
-  return 0;
-}

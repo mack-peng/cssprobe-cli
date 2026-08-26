@@ -11,6 +11,7 @@ import type {
   NodeProps,
   ShapeInfo,
 } from './types';
+import { pickWinning } from './specificity';
 
 // ─── Declared-value scanning ───
 
@@ -112,8 +113,7 @@ export function classifyShape(
   const getDeclared = (prop: string): string | null => {
     const arr = declared && declared[prop];
     if (!arr || arr.length === 0) return null;
-    const inline = arr.find(d => d.selector === 'inline');
-    return inline ? inline.value : arr[0].value;
+    return pickWinning(arr).value;
   };
 
   const sizeClass = (prop: string, maxProp: string): string => {
@@ -279,7 +279,7 @@ export function collect(cfg: CollectConfig): Snapshot {
       tree: null,
       crossOriginBlocked: crossOriginBlocked.count,
       blockedSheetUrls: blockedSheetUrls.slice(0, 5),
-      error: `未找到 ${cfg.rootSelector}`,
+      error: `Not found: ${cfg.rootSelector}`,
       candidates,
     };
   }

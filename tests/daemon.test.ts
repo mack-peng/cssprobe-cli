@@ -1,36 +1,58 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { SocketConnection, compareSemver } from '../src/utils/socketConnection';
+import net from 'net';
+import { SocketConnection } from '../src/utils/socketConnection';
 
 describe('socketConnection', () => {
-  describe('compareSemver', () => {
-    it('returns 0 for equal versions', () => {
-      assert.strictEqual(compareSemver('1.0.0', '1.0.0'), 0);
-      assert.strictEqual(compareSemver('2.5.3', '2.5.3'), 0);
+  describe('SocketConnection', () => {
+    it('delivers newline-delimited messages', async () => {
+      const messages: any[] = [];
+      const server = net.createServer(socket => {
+        const conn = new SocketConnection(socket);
+        conn.onmessage = msg => messages.push(msg);
+      });
+
+      await new Promise<void>(resolve => server.listen(0, '127.0.0.1', () => resolve()));
+      const port = (server.address() as net.AddressInfo).port;
+
+      const client = net.createConnection(port, '127.0.0.1');
+      await new Promise<void>(resolve => client.on('connect', () => resolve()));
+      client.write(JSON.stringify({ id: 1, method: 'run' }) + '\n');
+      await new Promise<void>(resolve => setTimeout(resolve, 50));
+      client.write(JSON.stringify({ id: 2, method: 'stop' }) + '\n');
+      await new Promise<void>(resolve => setTimeout(resolve, 50));
+
+      assert.strictEqual(messages.length, 2);
+      assert.strictEqual(messages[0].id, 1);
+      assert.strictEqual(messages[1].id, 2);
+
+      client.destroy();
+      await new Promise<void>(resolve => server.close(() => resolve()));
     });
 
-    it('returns 1 when first version is greater', () => {
-      assert.strictEqual(compareSemver('2.0.0', '1.0.0'), 1);
-      assert.strictEqual(compareSemver('1.1.0', '1.0.0'), 1);
-      assert.strictEqual(compareSemver('1.0.1', '1.0.0'), 1);
-    });
+    it('handles a message split across multiple chunks', async () => {
+      const messages: any[] = [];
+      const server = net.createServer(socket => {
+        const conn = new SocketConnection(socket);
+        conn.onmessage = msg => messages.push(msg);
+      });
 
-    it('returns -1 when first version is lesser', () => {
-      assert.strictEqual(compareSemver('1.0.0', '2.0.0'), -1);
-      assert.strictEqual(compareSemver('1.0.0', '1.1.0'), -1);
-      assert.strictEqual(compareSemver('1.0.0', '1.0.1'), -1);
-    });
+      await new Promise<void>(resolve => server.listen(0, '127.0.0.1', () => resolve()));
+      const port = (server.address() as net.AddressInfo).port;
 
-    it('treats versions with suffix as equal base', () => {
-      // Simplified compareSemver only compares base version (x.y.z)
-      const result = compareSemver('1.0.0-alpha-2026-01-01', '1.0.0-alpha-2026-01-02');
-      assert.strictEqual(result, 0);
-    });
+      const client = net.createConnection(port, '127.0.0.1');
+      await new Promise<void>(resolve => client.on('connect', () => resolve()));
+      const payload = JSON.stringify({ id: 7, method: 'run' });
+      client.write(payload.slice(0, 5));
+      await new Promise<void>(resolve => setTimeout(resolve, 50));
+      client.write(payload.slice(5) + '\n');
+      await new Promise<void>(resolve => setTimeout(resolve, 50));
 
-    it('compares base versions only', () => {
-      // Simplified compareSemver only compares base version (x.y.z)
-      const result = compareSemver('1.0.0', '1.0.0-alpha-2026-01-01');
-      assert.strictEqual(result, 0);
+      assert.strictEqual(messages.length, 1);
+      assert.strictEqual(messages[0].id, 7);
+
+      client.destroy();
+      await new Promise<void>(resolve => server.close(() => resolve()));
     });
   });
 });

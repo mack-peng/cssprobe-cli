@@ -12,6 +12,7 @@ import { SocketConnection } from '../utils/socketConnection';
 import { BrowserLauncher } from '../browser/launcher';
 import { analyze } from '../engine/analyzer';
 import { renderMarkdown, renderJSON } from '../engine/renderer';
+import { renderNode } from '../engine/renderers/dom-tree';
 
 import type { SessionConfig, ClientInfo } from './session';
 
@@ -133,7 +134,7 @@ async function executeCommand(
       const lines: string[] = [];
       lines.push(`## DOM tree (${snapshot.downDepth} levels deep)`);
       lines.push('```');
-      renderNode(snapshot.tree, lines, 0);
+      lines.push(...renderNode(snapshot.tree!, 0));
       lines.push('```');
       return { text: lines.join('\n') };
     }
@@ -174,8 +175,7 @@ async function executeCommand(
       }
 
       const lines = important.map(f => {
-        const icon = f.level === 'error' ? '⚠' : '⚠';
-        return `- ${icon} ${f.message} [${f.confidence}]${f.location ? ` @ ${f.location}` : ''}`;
+        return `- ⚠ ${f.message} [${f.confidence}]${f.location ? ` @ ${f.location}` : ''}`;
       });
       return { text: lines.join('\n') };
     }
@@ -198,7 +198,7 @@ async function executeCommand(
       if (!page)
         throw new Error('Browser is not open. Run: cssprobe-cli open <url>');
 
-      const buffer = await page.screenshot({ fullPage: args.fullPage });
+      const buffer = await page.screenshot({ fullPage: args['full-page'] });
       const base64 = buffer.toString('base64');
       return { text: `data:image/png;base64,${base64}` };
     }
@@ -249,21 +249,6 @@ async function executeCommand(
     default:
       throw new Error(`Unknown command: ${command}`);
   }
-}
-
-function renderNode(node: any, lines: string[], indent: number): void {
-  if (!node) return;
-  const cls = node.classes?.length ? `.${node.classes.join('.')}` : '';
-  const id = node.id ? `#${node.id}` : '';
-  const m = node.metrics;
-  const s = node.shape || {};
-  const shapeStr = s.role ? `[${s.role} h:${s.heightStrategy} w:${s.widthStrategy}]` : '';
-  const flag: string[] = [];
-  if (node.flags?.overflowsParent) flag.push('⚠parent-overflow');
-  if (node.flags?.overflowsViewport) flag.push('⚠viewport-overflow');
-  if (m?.clientHeight === 0 && m?.offsetHeight === 0) flag.push('⚠collapsed');
-  lines.push(`${'  '.repeat(indent)}<${node.tag}${id}${cls}> ${shapeStr} [${node.props?.position},${node.props?.display}] rect(${m?.rect?.width}×${m?.rect?.height})${flag.length ? ' ' + flag.join(' ') : ''}`);
-  for (const child of node.children || []) renderNode(child, lines, indent + 1);
 }
 
 async function socketExists(socketPath: string): Promise<boolean> {

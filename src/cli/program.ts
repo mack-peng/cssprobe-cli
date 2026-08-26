@@ -6,9 +6,6 @@ import { parseCommand } from './command';
 import { commands } from './commands';
 import { TextOutput, JsonOutput } from './output';
 import { loadConfig, maskConfig, writeRcConfig, getRcConfig, setActiveProfile, createProfile, rcFilePath } from '../config/config';
-import { BrowserLauncher } from '../browser/launcher';
-import { analyze } from '../engine/analyzer';
-import { renderMarkdown, renderJSON } from '../engine/renderer';
 import { Session, loadSession, createClientInfo } from '../daemon/session';
 import type { Output } from './output';
 import type { MinimistArgs } from './minimist';
@@ -166,14 +163,11 @@ async function handleOpen(
       _: ['open', url],
     }, 'open');
 
-    // Wait a bit for daemon to start
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    // Load session and navigate
-    const session = await loadSession();
-    if (session) {
-      await session.run({ _: ['goto', url] });
-    }
+    // Wait for the daemon to be ready (poll session file instead of fixed delay)
+    const session = await waitForSession(5000);
+    if (!session)
+      throw new Error('Daemon failed to become ready within 5s. Check the daemon log for errors.');
+    await session.run({ _: ['goto', url] });
 
     const result = {
       sessionId: 'default',
@@ -193,6 +187,16 @@ async function handleOpen(
   } catch (e: any) {
     output.error(e instanceof Error ? e.message : String(e));
   }
+}
+
+async function waitForSession(timeoutMs: number): Promise<Session | undefined> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const session = await loadSession();
+    if (session && await session.canConnect()) return session;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  return undefined;
 }
 
 async function handleClose(output: Output) {
@@ -295,7 +299,9 @@ async function handleSessionCommand(
     }
 
     // Run command in session
-    const result = await session.run({ ...cmdArgs, _: daemonArgs });
+    const runArgs: MinimistArgs = { ...cmdArgs, _: daemonArgs };
+    if (args.json) runArgs.json = true;
+    const result = await session.run(runArgs);
 
     if (output.json) {
       try {
@@ -452,7 +458,7 @@ function parseNetscapeCookies(content: string): PlaywrightCookie[] {
     const parts = trimmed.split('\t');
     if (parts.length < 7) continue;
 
-    const [domain, flag, path, secure, expires, name, ...valueParts] = parts;
+    const [domain, httpOnly, path, secure, expires, name, ...valueParts] = parts;
     const value = valueParts.join('\t');
     const expiresNum = parseInt(expires, 10);
 
@@ -462,7 +468,7 @@ function parseNetscapeCookies(content: string): PlaywrightCookie[] {
       domain,
       path: path || '/',
       expires: isNaN(expiresNum) || expiresNum === 0 ? -1 : expiresNum,
-      httpOnly: false,
+      httpOnly: httpOnly === 'TRUE',
       secure: secure === 'TRUE',
       sameSite: secure === 'TRUE' ? 'None' : 'Lax',
     });
