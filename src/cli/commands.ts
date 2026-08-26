@@ -24,6 +24,7 @@ const open = declareCommand({
   options: z.object({
     browser: z.enum(['chromium', 'firefox', 'webkit']).optional().describe('browser engine (default chromium)'),
     headed: z.boolean().optional().describe('show the browser window'),
+    viewport: z.string().optional().describe('viewport size as WxH (e.g. 1280x720)'),
   }),
 });
 
@@ -106,12 +107,31 @@ const screenshot = declareCommand({
   }),
 });
 
+const resize = declareCommand({
+  name: 'resize',
+  category: 'core',
+  description: 'Resize the browser viewport',
+  args: z.object({
+    width: numberArg.describe('viewport width'),
+    height: numberArg.describe('viewport height'),
+  }),
+});
+
 const evalCmd = declareCommand({
   name: 'eval',
   category: 'core',
-  description: 'Evaluate JavaScript expression on the page',
+  description: 'Evaluate JavaScript expression on the page (browser context)',
   args: z.object({
     expression: z.string().describe('JavaScript expression to evaluate'),
+  }),
+});
+
+const playwrightCmd = declareCommand({
+  name: 'playwright',
+  category: 'core',
+  description: 'Execute Playwright API call (Node.js context)',
+  args: z.object({
+    call: z.string().describe('Playwright API call, e.g. "page.setViewportSize({width: 1280, height: 720})"'),
   }),
 });
 
@@ -216,7 +236,7 @@ const commandsArray: AnyCommandSchema[] = [
   // cssprobe
   inspect, tree, layout, findings, injectCss,
   // browser
-  screenshot, evalCmd,
+  resize, evalCmd, playwrightCmd, screenshot,
   // state
   stateImport,
   // config

@@ -67,6 +67,8 @@ export async function program() {
     case 'inject-css':
     case 'screenshot':
     case 'eval':
+    case 'resize':
+    case 'playwright':
       await handleSessionCommand(commandName!, command!, rawArgs, output);
       return;
   }
@@ -135,11 +137,30 @@ async function handleOpen(
     const url = parsed.url as string || 'about:blank';
     const browser = (parsed.browser as string) || 'chromium';
     const headed = !!parsed.headed;
+    const viewportStr = parsed.viewport as string | undefined;
+    
+    // Parse viewport
+    let viewport: { width: number; height: number } | undefined;
+    if (viewportStr) {
+      const parts = viewportStr.split('x');
+      if (parts.length !== 2) {
+        output.error('Invalid viewport format. Use WxH (e.g. 1280x720)');
+        return;
+      }
+      const width = parseInt(parts[0], 10);
+      const height = parseInt(parts[1], 10);
+      if (isNaN(width) || isNaN(height)) {
+        output.error('Invalid viewport dimensions. Must be numbers.');
+        return;
+      }
+      viewport = { width, height };
+    }
 
     // Start daemon
     const { pid } = await Session.startDaemon({
       browser,
       headed,
+      viewport,
       _: ['open', url],
     }, 'open');
 
@@ -156,6 +177,7 @@ async function handleOpen(
       sessionId: 'default',
       pid,
       url,
+      viewport: viewport || { width: 1280, height: 720 },
     };
 
     if (output.json) {
@@ -164,6 +186,7 @@ async function handleOpen(
       console.log(`Browser opened at ${url}`);
       console.log(`Session ID: default`);
       console.log(`PID: ${pid}`);
+      console.log(`Viewport: ${viewport?.width || 1280}x${viewport?.height || 720}`);
     }
   } catch (e: any) {
     output.error(e instanceof Error ? e.message : String(e));

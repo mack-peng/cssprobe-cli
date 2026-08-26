@@ -15,9 +15,12 @@ import { renderMarkdown, renderJSON } from '../engine/renderer';
 
 import type { SessionConfig, ClientInfo } from './session';
 
+const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
+
 export interface DaemonOptions {
   headed?: boolean;
   browser?: string;
+  viewport?: { width: number; height: number };
 }
 
 export async function startDaemon(
@@ -41,6 +44,7 @@ export async function startDaemon(
   const launcher = new BrowserLauncher({
     browser: options.browser || 'chromium',
     headed: options.headed !== false,
+    viewport: options.viewport,
   });
 
   const server = net.createServer(socket => {
@@ -207,6 +211,36 @@ async function executeCommand(
         throw new Error('Browser is not open. Run: cssprobe-cli open <url>');
 
       const result = await page.evaluate(expression);
+      return { text: JSON.stringify(result, null, 2) };
+    }
+
+    case 'resize': {
+      const width = parseInt(params[0], 10);
+      const height = parseInt(params[1], 10);
+      if (isNaN(width) || isNaN(height))
+        throw new Error('Usage: cssprobe-cli resize <width> <height>');
+
+      const page = launcher.getPage();
+      if (!page)
+        throw new Error('Browser is not open. Run: cssprobe-cli open <url>');
+
+      await page.setViewportSize({ width, height });
+      return { text: JSON.stringify({ width, height }) };
+    }
+
+    case 'playwright': {
+      const call = params[0];
+      if (!call)
+        throw new Error('Playwright API call is required');
+
+      const page = launcher.getPage();
+      if (!page)
+        throw new Error('Browser is not open. Run: cssprobe-cli open <url>');
+
+      // Create a safe eval context with page and browser objects
+      const asyncFunction = new AsyncFunction('page', 'browser', `return ${call}`);
+      const browser = page.context().browser();
+      const result = await asyncFunction(page, browser);
       return { text: JSON.stringify(result, null, 2) };
     }
 
