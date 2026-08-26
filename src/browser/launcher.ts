@@ -263,6 +263,11 @@ export class BrowserLauncher {
     return resolvedPath;
   }
 
+  /** Get the current page object. */
+  getPage(): Page | null {
+    return this.page;
+  }
+
   async close(): Promise<void> {
     if (this.context) await this.context.close().catch(() => {});
     if (this.browser) await this.browser.close().catch(() => {});

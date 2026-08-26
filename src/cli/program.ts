@@ -9,6 +9,7 @@ import { loadConfig, maskConfig, writeRcConfig, getRcConfig, setActiveProfile, c
 import { BrowserLauncher } from '../browser/launcher';
 import { analyze } from '../engine/analyzer';
 import { renderMarkdown, renderJSON } from '../engine/renderer';
+import { Session, loadSession, createClientInfo } from '../daemon/session';
 import type { Output } from './output';
 import type { MinimistArgs } from './minimist';
 import type { AnyCommandSchema, HelpData, HelpEntry } from './command';
@@ -45,22 +46,32 @@ export async function program() {
   if (handleSkillCommands(commandName!, command!, rawArgs, output))
     return;
 
-  if (commandName === 'login') {
-    await handleLogin(command!, cmdEntry!, rawArgs, output);
-    return;
+  // Session-based commands
+  switch (commandName) {
+    case 'open':
+      await handleOpen(command!, rawArgs, output);
+      return;
+    case 'close':
+      await handleClose(output);
+      return;
+    case 'status':
+      await handleStatus(output);
+      return;
+    case 'state-import':
+      await handleStateImport(command!, rawArgs, output);
+      return;
+    case 'inspect':
+    case 'tree':
+    case 'layout':
+    case 'findings':
+    case 'inject-css':
+    case 'screenshot':
+    case 'eval':
+      await handleSessionCommand(commandName!, command!, rawArgs, output);
+      return;
   }
 
-  if (commandName === 'state-import') {
-    await handleStateImport(command!, cmdEntry!, rawArgs, output);
-    return;
-  }
-
-  if (commandName === 'interactive') {
-    await handleInteractive(command!, cmdEntry!, rawArgs, output);
-    return;
-  }
-
-  await handleInspect(command!, cmdEntry!, rawArgs, output);
+  output.error(`Unknown command: ${commandName}. Run 'cssprobe-cli --help' for usage.`);
 }
 
 function parseArgs(help: HelpData): MinimistArgs {
@@ -110,142 +121,168 @@ function validateFlags(args: MinimistArgs, cmdEntry: { flags: Record<string, 'bo
     throw new Error(`Unknown option${unknownFlags.length > 1 ? 's' : ''}: ${unknownFlags.map(f => `--${f}`).join(', ')}`);
 }
 
-// ── inspect ──
+// ── session commands ──
 
-async function handleInspect(
+async function handleOpen(
   command: AnyCommandSchema,
-  cmdEntry: HelpEntry,
   args: MinimistArgs,
   output: Output
 ) {
-  if (command.name !== 'inspect') {
-    output.error(`Unknown command: ${command.name}`);
-    return;
-  }
-
   try {
     const cmdArgs = splitArgs(args);
     const parsed = parseCommand(command, cmdArgs as Record<string, string> & { _: string[] });
-    const config = loadConfig(args);
 
-    const url = parsed.url as string;
-    const selector = parsed.selector as string | undefined;
-    const zoom = !!parsed.zoom;
-    const depthRaw = parsed.depth as number | string | undefined;
-    let depth: number;
-    if (depthRaw === 'auto' || depthRaw === undefined) {
-      depth = 0; // placeholder, resolved after browser opens
-    } else {
-      depth = Number(depthRaw);
-    }
-    const maxNodes = (parsed['max-nodes'] as number) || 60;
-    const upTo = (parsed['up-to'] as string) || 'html';
-    const wait = !!parsed.wait;
-    const headed = !!parsed.headed || config.headed || wait;
-    const browser = (parsed.browser as string) || config.browser;
-    const state = (parsed.state as string) || undefined;
-    const brief = !!parsed.brief;
-    const layout = !!parsed.layout;
+    const url = parsed.url as string || 'about:blank';
+    const browser = (parsed.browser as string) || 'chromium';
+    const headed = !!parsed.headed;
 
-    if (!url) output.error('URL is required. Usage: cssprobe-cli inspect <url> [selector]');
+    // Start daemon
+    const { pid } = await Session.startDaemon({
+      browser,
+      headed,
+      _: ['open', url],
+    }, 'open');
 
-    // Auto-detect root selector if not provided
-    let rootSelector = selector;
-    if (!rootSelector) {
-      const detected = await autoDetectRoot(url, { browser, headed, state, viewport: config.viewport });
-      if (!detected) {
-        output.error('Could not auto-detect a root element. Please provide a selector: cssprobe-cli inspect <url> <selector>');
-        return;
-      }
-      rootSelector = detected;
-      console.error(`Auto-detected root: ${rootSelector}`);
+    // Wait a bit for daemon to start
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // Load session and navigate
+    const session = await loadSession();
+    if (session) {
+      await session.run({ _: ['goto', url] });
     }
 
-    const launcher = new BrowserLauncher({ browser, headed, state, viewport: config.viewport });
-    await launcher.open(url);
-
-    // Wait for user interaction if --wait
-    if (wait) {
-      await launcher.waitForUser();
-    }
-
-    // Resolve auto depth
-    if (depth === 0) {
-      const measured = await launcher.measureDepth(rootSelector);
-      depth = Math.min(measured, 20) || 6;
-      console.error(`Auto-detected depth: ${measured} (using ${depth})`);
-    }
-
-    const collectCfg: CollectConfig = {
-      rootSelector,
-      upTo,
-      downDepth: depth,
-      maxNodes,
+    const result = {
+      sessionId: 'default',
+      pid,
+      url,
     };
 
-    const snapshot = await launcher.collect(collectCfg);
-    await launcher.close();
-
-    const findings = analyze(snapshot);
-
     if (output.json) {
-      console.log(output.format(renderJSON(snapshot, findings, brief)));
+      console.log(JSON.stringify(result, null, 2));
     } else {
-      console.log(renderMarkdown(snapshot, findings, brief, layout));
+      console.log(`Browser opened at ${url}`);
+      console.log(`Session ID: default`);
+      console.log(`PID: ${pid}`);
     }
   } catch (e: any) {
     output.error(e instanceof Error ? e.message : String(e));
   }
 }
 
-async function autoDetectRoot(url: string, opts: { browser: string; headed: boolean; state?: string; viewport?: { width: number; height: number } }): Promise<string | null> {
-  const launcher = new BrowserLauncher(opts);
+async function handleClose(output: Output) {
   try {
-    await launcher.open(url);
-    const candidates = await launcher.autoDetectRoot();
-    if (candidates.length > 0) return candidates[0];
-    return null;
-  } finally {
-    await launcher.close();
-  }
-}
+    const session = await loadSession();
+    if (!session) {
+      output.error('No active session. Run: cssprobe-cli open <url>');
+      return;
+    }
 
-// ── login ──
+    await session.stop();
 
-async function handleLogin(
-  command: AnyCommandSchema,
-  cmdEntry: HelpEntry,
-  args: MinimistArgs,
-  output: Output
-) {
-  try {
-    const cmdArgs = splitArgs(args);
-    const parsed = parseCommand(command, cmdArgs as Record<string, string> & { _: string[] });
-    const config = loadConfig(args);
-
-    const url = parsed.url as string;
-    const browser = (parsed.browser as string) || config.browser;
-    const outPath = (parsed.out as string) || defaultStatePath(url);
-
-    if (!url) output.error('URL is required. Usage: cssprobe-cli login <url>');
-
-    const launcher = new BrowserLauncher({ browser, headed: true });
-    const savedPath = await launcher.loginAndSave(url, outPath);
-    await launcher.close();
-
-    console.log(output.format({ saved: savedPath, usage: `cssprobe-cli inspect <url> --state ${savedPath}` }));
+    if (output.json) {
+      console.log(JSON.stringify({ closed: true, sessionId: 'default' }, null, 2));
+    } else {
+      console.log('Browser closed.');
+    }
   } catch (e: any) {
     output.error(e instanceof Error ? e.message : String(e));
   }
 }
 
-function defaultStatePath(url: string): string {
+async function handleStatus(output: Output) {
   try {
-    const hostname = new URL(url).hostname.replace(/[^a-z0-9.-]/g, '_');
-    const dir = path.join(os.homedir(), '.cssprobe-cli', 'states');
-    return path.join(dir, `${hostname}.json`);
-  } catch {
-    return path.join(os.homedir(), '.cssprobe-cli', 'states', 'default.json');
+    const session = await loadSession();
+    if (!session) {
+      const result = { sessionId: 'default', alive: false };
+      if (output.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log('No active session.');
+      }
+      return;
+    }
+
+    const canConnect = await session.canConnect();
+    const result = {
+      sessionId: 'default',
+      alive: canConnect,
+      config: session.config,
+    };
+
+    if (output.json) {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      console.log(`Session: default`);
+      console.log(`Status: ${canConnect ? 'alive' : 'dead'}`);
+      if (canConnect) {
+        console.log(`Browser: ${session.config.browser.browserName}`);
+      }
+    }
+  } catch (e: any) {
+    output.error(e instanceof Error ? e.message : String(e));
+  }
+}
+
+async function handleSessionCommand(
+  commandName: string,
+  command: AnyCommandSchema,
+  args: MinimistArgs,
+  output: Output
+) {
+  try {
+    const session = await loadSession();
+    if (!session) {
+      output.error('No active session. Run: cssprobe-cli open <url>');
+      return;
+    }
+
+    const cmdArgs = splitArgs(args);
+    const parsed = parseCommand(command, cmdArgs as Record<string, string> & { _: string[] });
+
+    // Build command args for daemon
+    const daemonArgs: string[] = [commandName];
+    
+    // Add positional args
+    if (command.args) {
+      const argsSchema = command.args;
+      const argNames = Object.keys(argsSchema.shape);
+      for (const name of argNames) {
+        if (parsed[name] !== undefined) {
+          daemonArgs.push(String(parsed[name]));
+        }
+      }
+    }
+
+    // Add options
+    if (command.options) {
+      const optionsSchema = command.options;
+      const optionNames = Object.keys(optionsSchema.shape);
+      for (const name of optionNames) {
+        if (parsed[name] !== undefined) {
+          if (typeof parsed[name] === 'boolean') {
+            if (parsed[name]) daemonArgs.push(`--${name}`);
+          } else {
+            daemonArgs.push(`--${name}=${parsed[name]}`);
+          }
+        }
+      }
+    }
+
+    // Run command in session
+    const result = await session.run({ ...cmdArgs, _: daemonArgs });
+
+    if (output.json) {
+      try {
+        console.log(JSON.parse(result.text));
+      } catch {
+        console.log(result.text);
+      }
+    } else {
+      console.log(result.text);
+    }
+  } catch (e: any) {
+    output.error(e instanceof Error ? e.message : String(e));
   }
 }
 
@@ -379,12 +416,6 @@ interface PlaywrightState {
   origins: Array<{ origin: string; localStorage: Array<{ name: string; value: string }> }>;
 }
 
-/**
- * Parse Netscape cookie format (tab-separated):
- * domain  flag  path  secure  expires  name  value
- *
- * Also supports lines starting with # as comments, and blank lines.
- */
 function parseNetscapeCookies(content: string): PlaywrightCookie[] {
   const cookies: PlaywrightCookie[] = [];
   const lines = content.split('\n');
@@ -397,7 +428,7 @@ function parseNetscapeCookies(content: string): PlaywrightCookie[] {
     if (parts.length < 7) continue;
 
     const [domain, flag, path, secure, expires, name, ...valueParts] = parts;
-    const value = valueParts.join('\t'); // value may contain tabs
+    const value = valueParts.join('\t');
     const expiresNum = parseInt(expires, 10);
 
     cookies.push({
@@ -417,7 +448,6 @@ function parseNetscapeCookies(content: string): PlaywrightCookie[] {
 
 async function handleStateImport(
   command: AnyCommandSchema,
-  cmdEntry: HelpEntry,
   args: MinimistArgs,
   output: Output
 ) {
@@ -429,7 +459,6 @@ async function handleStateImport(
     const outPath = (parsed.out as string) || path.join(os.homedir(), '.cssprobe-cli', 'states', 'imported.json');
     const mergePath = parsed.merge as string | undefined;
 
-    // Read cookie content from file or stdin
     let content: string;
     if (filePath) {
       const resolved = path.resolve(filePath);
@@ -439,7 +468,6 @@ async function handleStateImport(
       }
       content = fs.readFileSync(resolved, 'utf-8');
     } else {
-      // Read from stdin
       content = '';
       for await (const chunk of process.stdin) {
         content += chunk;
@@ -451,14 +479,12 @@ async function handleStateImport(
       return;
     }
 
-    // Parse cookies
     const newCookies = parseNetscapeCookies(content);
     if (newCookies.length === 0) {
       output.error('No valid cookies found. Expected Netscape format (tab-separated: domain\\tflag\\tpath\\tsecure\\texpires\\tname\\tvalue)');
       return;
     }
 
-    // Load existing state if merging
     let state: PlaywrightState;
     if (mergePath && fs.existsSync(mergePath)) {
       state = JSON.parse(fs.readFileSync(mergePath, 'utf-8'));
@@ -467,7 +493,6 @@ async function handleStateImport(
       state = { cookies: [], origins: [] };
     }
 
-    // Merge cookies (new cookies override existing ones with same domain+name+path)
     const keyed: Record<string, PlaywrightCookie> = {};
     for (const c of state.cookies) {
       keyed[`${c.domain}|${c.name}|${c.path}`] = c;
@@ -477,7 +502,6 @@ async function handleStateImport(
     }
     state.cookies = Object.values(keyed);
 
-    // Write output
     const resolvedOut = path.resolve(outPath);
     const dir = path.dirname(resolvedOut);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -492,273 +516,4 @@ async function handleStateImport(
   } catch (e: any) {
     output.error(e instanceof Error ? e.message : String(e));
   }
-}
-
-// ── interactive ──
-
-const REPL_COMMANDS: Record<string, string> = {
-  tree:     '<selector>           Show DOM tree',
-  layout:   '<selector>           Show ASCII layout diagram',
-  sketch:   '<selector>           Show tree sketch (issues only)',
-  findings: '<selector>           Show findings only',
-  json:     '<selector>           Show JSON output',
-  report:   '<selector>           Show full report',
-  navigate: '<url>                Navigate to a new URL',
-  depth:    '<n>                  Set depth (default: auto)',
-  help:     '                     Show this help',
-  quit:     '                     Close browser and exit',
-};
-
-async function handleInteractive(
-  command: AnyCommandSchema,
-  cmdEntry: HelpEntry,
-  args: MinimistArgs,
-  _output: Output
-) {
-  const cmdArgs = splitArgs(args);
-  const parsed = parseCommand(command, cmdArgs as Record<string, string> & { _: string[] });
-
-  const url = parsed.url as string;
-  const browser = (parsed.browser as string) || 'chromium';
-  const state = (parsed.state as string) || undefined;
-  const depthRaw = parsed.depth as number | string | undefined;
-  let depth = depthRaw === 'auto' || depthRaw === undefined ? 0 : Number(depthRaw);
-
-  if (!url) {
-    console.error('Error: URL is required. Usage: cssprobe-cli interactive <url>');
-    process.exit(1);
-  }
-
-  const config = loadConfig(args);
-  const launcher = new BrowserLauncher({ browser, headed: true, state, viewport: config.viewport });
-  await launcher.open(url);
-  let currentUrl = url;
-
-  // Resolve auto depth
-  if (depth === 0) {
-    try {
-      const candidates = await launcher.autoDetectRoot();
-      const selector = candidates[0] || 'body';
-      const measured = await launcher.measureDepth(selector);
-      depth = Math.min(measured, 20) || 6;
-      console.error(`Auto-detected depth: ${measured} (using ${depth})`);
-    } catch {
-      depth = 6;
-    }
-  }
-
-  console.error('');
-  console.error(`Browser opened at ${currentUrl}`);
-  console.error("Type 'help' for available commands, 'quit' to exit.");
-  console.error('');
-
-  const rl = require('readline').createInterface({
-    input: process.stdin,
-    output: process.stderr,
-    prompt: 'inspect> ',
-  });
-
-  rl.prompt();
-
-  rl.on('line', async (line: string) => {
-    const trimmed = line.trim();
-    if (!trimmed) { rl.prompt(); return; }
-
-    // Parse: command [selector] [--options]
-    const parts = trimmed.split(/\s+/);
-    const cmd = parts[0];
-    const rest = parts.slice(1);
-
-    try {
-      switch (cmd) {
-        case 'help': {
-          console.error('');
-          console.error('Commands:');
-          for (const [name, desc] of Object.entries(REPL_COMMANDS)) {
-            console.error(`  ${name.padEnd(12)} ${desc}`);
-          }
-          console.error('');
-          break;
-        }
-        case 'quit':
-        case 'exit': {
-          await launcher.close();
-          console.error('Browser closed.');
-          rl.close();
-          process.exit(0);
-        }
-        case 'navigate': {
-          const newUrl = rest[0];
-          if (!newUrl) { console.error('Usage: navigate <url>'); break; }
-          await launcher.navigate(newUrl);
-          currentUrl = newUrl;
-          console.error(`Navigated to ${currentUrl}`);
-          break;
-        }
-        case 'depth': {
-          const n = parseInt(rest[0], 10);
-          if (isNaN(n) || n < 1) { console.error('Usage: depth <n>'); break; }
-          depth = Math.min(n, 20);
-          console.error(`Depth set to ${depth}`);
-          break;
-        }
-        case 'tree':
-        case 'layout':
-        case 'sketch':
-        case 'findings':
-        case 'json':
-        case 'report': {
-          // Parse selector + options from remaining args
-          let selector = '';
-          let useBrief = false;
-          let useLayout = false;
-          let useJson = false;
-          for (const arg of rest) {
-            if (arg === '--brief') useBrief = true;
-            else if (arg === '--layout') useLayout = true;
-            else if (arg === '--json') useJson = true;
-            else if (!arg.startsWith('-') && !selector) selector = arg;
-          }
-
-          // Command-specific defaults
-          if (cmd === 'layout') useLayout = true;
-          if (cmd === 'sketch') useBrief = true;
-          if (cmd === 'json') useJson = true;
-
-          if (!selector) {
-            console.error('Usage: ' + cmd + ' <selector> [--brief] [--layout] [--json]');
-            break;
-          }
-
-          // Measure depth if needed
-          let useDepth = depth;
-          if (useDepth === 0) {
-            try {
-              const measured = await launcher.measureDepth(selector);
-              useDepth = Math.min(measured, 20) || 6;
-            } catch {
-              useDepth = 6;
-            }
-          }
-
-          const collectCfg: CollectConfig = {
-            rootSelector: selector,
-            upTo: 'html',
-            downDepth: useDepth,
-            maxNodes: 60,
-          };
-
-          const snapshot = await launcher.collect(collectCfg);
-          if (snapshot.error) {
-            console.error(`Error: ${snapshot.error}`);
-            if (snapshot.candidates?.length) {
-              console.error(`Similar nodes: ${snapshot.candidates.join(', ')}`);
-            }
-            break;
-          }
-
-          const findings = analyze(snapshot);
-
-          if (cmd === 'findings') {
-            // Only show findings section
-            const important = findings.filter(f => f.level === 'warning' || f.level === 'error');
-            if (important.length === 0) {
-              console.log('No warnings or errors');
-            } else {
-              for (const f of important) {
-                const icon = f.level === 'error' ? '\u26A0' : '\u26A0';
-                console.log(`- ${icon} ${f.message} [${f.confidence}]${f.location ? ` @ ${f.location}` : ''}`);
-              }
-            }
-          } else if (useJson) {
-            console.log(JSON.stringify(renderJSON(snapshot, findings, useBrief), null, 2));
-          } else if (cmd === 'tree') {
-            // Only DOM tree
-            const lines: string[] = [];
-            lines.push(`## DOM tree (${snapshot.downDepth} levels deep)`);
-            lines.push('```');
-            // Inline renderNode
-            const renderNodeLocal = (node: any, indent: number): void => {
-              if (!node) return;
-              const cls = node.classes?.length ? `.${node.classes.join('.')}` : '';
-              const id = node.id ? `#${node.id}` : '';
-              const m = node.metrics;
-              const s = node.shape || {};
-              const shapeStr = s.role ? `[${s.role} h:${s.heightStrategy} w:${s.widthStrategy}]` : '';
-              const flag: string[] = [];
-              if (node.flags?.overflowsParent) flag.push('\u26A0parent-overflow');
-              if (node.flags?.overflowsViewport) flag.push('\u26A0viewport-overflow');
-              if (m?.clientHeight === 0 && m?.offsetHeight === 0) flag.push('\u26A0collapsed');
-              lines.push(`${'  '.repeat(indent)}<${node.tag}${id}${cls}> ${shapeStr} [${node.props?.position},${node.props?.display}] rect(${m?.rect?.width}\u00D7${m?.rect?.height})${flag.length ? ' ' + flag.join(' ') : ''}`);
-              for (const child of node.children || []) renderNodeLocal(child, indent + 1);
-            };
-            renderNodeLocal(snapshot.tree, 0);
-            lines.push('```');
-            console.log(lines.join('\n'));
-          } else {
-            console.log(renderMarkdown(snapshot, findings, useBrief, useLayout));
-          }
-          break;
-        }
-        default: {
-          // Try as a direct selector (shorthand for 'report <selector>')
-          if (!cmd.startsWith('-')) {
-            const selector = cmd;
-            let useBrief = false;
-            let useLayout = false;
-            for (const arg of rest) {
-              if (arg === '--brief') useBrief = true;
-              if (arg === '--layout') useLayout = true;
-            }
-
-            let useDepth = depth;
-            if (useDepth === 0) {
-              try {
-                const measured = await launcher.measureDepth(selector);
-                useDepth = Math.min(measured, 20) || 6;
-              } catch {
-                useDepth = 6;
-              }
-            }
-
-            const collectCfg: CollectConfig = {
-              rootSelector: selector,
-              upTo: 'html',
-              downDepth: useDepth,
-              maxNodes: 60,
-            };
-
-            const snapshot = await launcher.collect(collectCfg);
-            if (snapshot.error) {
-              console.error(`Error: ${snapshot.error}`);
-              if (snapshot.candidates?.length) {
-                console.error(`Similar nodes: ${snapshot.candidates.join(', ')}`);
-              }
-            } else {
-              const findings = analyze(snapshot);
-              console.log(renderMarkdown(snapshot, findings, useBrief, useLayout));
-            }
-          } else {
-            console.error(`Unknown command: ${cmd}. Type 'help' for available commands.`);
-          }
-        }
-      }
-    } catch (e: any) {
-      console.error(`Error: ${e.message || e}`);
-    }
-
-    rl.prompt();
-  });
-
-  rl.on('close', async () => {
-    await launcher.close().catch(() => {});
-    process.exit(0);
-  });
-
-  // Handle SIGINT gracefully
-  process.on('SIGINT', async () => {
-    console.error('\nClosing browser...');
-    await launcher.close().catch(() => {});
-    process.exit(0);
-  });
 }

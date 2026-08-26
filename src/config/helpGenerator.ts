@@ -55,7 +55,9 @@ function generateCommandHelp(command: AnyCommandSchema) {
 }
 
 const categories: { name: Category; title: string }[] = [
-  { name: 'core', title: 'Inspection' },
+  { name: 'core', title: 'Session Management' },
+  { name: 'cssprobe', title: 'CSS Inspection' },
+  { name: 'export', title: 'Export' },
   { name: 'config', title: 'Configuration' },
   { name: 'skill', title: 'Agent Skills' },
 ];
