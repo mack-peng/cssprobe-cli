@@ -21,6 +21,7 @@ export interface DaemonOptions {
   headed?: boolean;
   browser?: string;
   viewport?: { width: number; height: number };
+  state?: string;
 }
 
 export async function startDaemon(
@@ -45,6 +46,7 @@ export async function startDaemon(
     browser: options.browser || 'chromium',
     headed: options.headed !== false,
     viewport: options.viewport,
+    state: options.state,
   });
 
   const server = net.createServer(socket => {

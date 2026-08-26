@@ -13,6 +13,7 @@ const sessionName = args[0] || 'default';
 const options = {
   headed: args.includes('--headed'),
   browser: args.find(a => a.startsWith('--browser='))?.split('=')[1],
+  state: args.find(a => a.startsWith('--state='))?.split('=')[1],
 };
 
 async function main() {

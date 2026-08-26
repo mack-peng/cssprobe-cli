@@ -105,6 +105,8 @@ export class Session {
       daemonArgs.push('--headed');
     if (args.browser)
       daemonArgs.push(`--browser=${args.browser}`);
+    if (args.state)
+      daemonArgs.push(`--state=${args.state}`);
 
     const child = require('child_process').spawn(process.execPath, daemonArgs, {
       detached: true,

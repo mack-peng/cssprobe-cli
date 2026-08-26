@@ -71,6 +71,12 @@ cssprobe-cli close
 ```bash
 # Import cookies from browser export (Netscape format)
 cssprobe-cli state-import cookies.txt --out ~/.cssprobe-cli/states/mysite.json
+
+# Or use --name for simpler syntax
+cssprobe-cli state-import cookies.txt --name mysite
+
+# Open browser with saved state
+cssprobe-cli open https://mysite.com --state ~/.cssprobe-cli/states/mysite.json
 ```
 
 ### 4. JSON Output
@@ -117,6 +123,7 @@ cssprobe-cli close
 ```bash
 cssprobe-cli open [url]           # Open browser in session mode (non-blocking)
 cssprobe-cli open [url] --viewport 1280x720  # Open with custom viewport
+cssprobe-cli open [url] --state ~/.cssprobe-cli/states/mysite.json  # Open with saved state
 cssprobe-cli close                # Close browser session
 cssprobe-cli status               # Show session status
 ```
@@ -213,6 +220,9 @@ Import cookies from Netscape format (browser export standard) into a Playwright 
 ```bash
 # From file
 cssprobe-cli state-import cookies.txt --out mystate.json
+
+# From file with custom name (saves to ~/.cssprobe-cli/states/<name>.json)
+cssprobe-cli state-import cookies.txt --name mysite
 
 # From stdin
 cat cookies.txt | cssprobe-cli state-import --out mystate.json

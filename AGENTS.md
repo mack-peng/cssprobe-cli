@@ -56,6 +56,7 @@ src/
 ### Session Management
 - `open [url]` — Open browser in session mode (non-blocking)
   - `--viewport <WxH>` — Set viewport size (e.g. `--viewport 1280x720`)
+  - `--state <file>` — Load saved state (cookies + localStorage)
 - `close` — Close the browser session
 - `status` — Show current session status
 
@@ -76,6 +77,9 @@ src/
 
 ### State
 - `state-import [file]` — Import cookies from Netscape format
+  - `--out <file>` — Output state file path (default: `~/.cssprobe-cli/states/imported.json`)
+  - `--name <name>` — Custom name for the state file (e.g. `mysite` or `mysite.json`)
+  - `--merge <file>` — Existing state file to merge into
 
 ### Config
 - `config-show` / `config-set` / `config-list` / `config-use` / `config-new` / `config-path`

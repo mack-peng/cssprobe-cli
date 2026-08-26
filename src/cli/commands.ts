@@ -25,6 +25,7 @@ const open = declareCommand({
     browser: z.enum(['chromium', 'firefox', 'webkit']).optional().describe('browser engine (default chromium)'),
     headed: z.boolean().optional().describe('show the browser window'),
     viewport: z.string().optional().describe('viewport size as WxH (e.g. 1280x720)'),
+    state: z.string().optional().describe('path to saved state file (cookies + localStorage)'),
   }),
 });
 
@@ -146,6 +147,7 @@ const stateImport = declareCommand({
   }),
   options: z.object({
     out: z.string().optional().describe('output state file path (default: ~/.cssprobe-cli/states/imported.json)'),
+    name: z.string().optional().describe('custom name for the state file (e.g. mysite or mysite.json)'),
     merge: z.string().optional().describe('existing state file to merge into'),
   }),
 });

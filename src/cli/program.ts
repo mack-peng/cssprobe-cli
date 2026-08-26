@@ -138,6 +138,7 @@ async function handleOpen(
     const browser = (parsed.browser as string) || 'chromium';
     const headed = !!parsed.headed;
     const viewportStr = parsed.viewport as string | undefined;
+    const state = parsed.state as string | undefined;
     
     // Parse viewport
     let viewport: { width: number; height: number } | undefined;
@@ -161,6 +162,7 @@ async function handleOpen(
       browser,
       headed,
       viewport,
+      state,
       _: ['open', url],
     }, 'open');
 
@@ -479,7 +481,17 @@ async function handleStateImport(
     const parsed = parseCommand(command, cmdArgs as Record<string, string> & { _: string[] });
 
     const filePath = parsed.file as string | undefined;
-    const outPath = (parsed.out as string) || path.join(os.homedir(), '.cssprobe-cli', 'states', 'imported.json');
+    const name = parsed.name as string | undefined;
+    let outPath = parsed.out as string | undefined;
+    
+    if (!outPath && name) {
+      // Use custom name in default states directory
+      const fileName = name.endsWith('.json') ? name : `${name}.json`;
+      outPath = path.join(os.homedir(), '.cssprobe-cli', 'states', fileName);
+    } else if (!outPath) {
+      outPath = path.join(os.homedir(), '.cssprobe-cli', 'states', 'imported.json');
+    }
+    
     const mergePath = parsed.merge as string | undefined;
 
     let content: string;
