@@ -108,15 +108,10 @@ cssprobe-cli inspect https://mysite.com/page ".target" --state ~/.cssprobe-cli/s
 ### Option B: Interactive Login
 
 ```bash
-cssprobe-cli login https://mysite.com
-# Browser opens → complete login manually → press Enter
-# State saved to ~/.cssprobe-cli/states/mysite.com.json
-```
+cssprobe-cli open https://mysite.com --headed
+# Browser opens -> complete login manually -> continue inspection
 
-Then use:
-
-```bash
-cssprobe-cli inspect https://mysite.com/page ".target" --state ~/.cssprobe-cli/states/mysite.com.json
+cssprobe-cli inspect .target
 ```
 
 ### Option C: Merge Cookies into Existing State
@@ -125,39 +120,36 @@ cssprobe-cli inspect https://mysite.com/page ".target" --state ~/.cssprobe-cli/s
 cssprobe-cli state-import new-cookies.txt --merge existing-state.json --out updated.json
 ```
 
-### Option D: Wait for User Interaction
-
-For pages that require clicking a button or opening a dialog before inspection:
+### Option D: Open with Saved State
 
 ```bash
-cssprobe-cli inspect https://mysite.com/page ".dialog" --state ~/.cssprobe-cli/states/mysite.json --wait
-# Browser opens -> perform actions (click, open dialog) -> press Enter -> inspect
+# Import cookies first
+cssprobe-cli state-import cookies.txt --name mysite
+
+# Open browser with saved state
+cssprobe-cli open https://mysite.com --state ~/.cssprobe-cli/states/mysite.json
+
+# Then inspect
+cssprobe-cli inspect .target
 ```
 
 ---
 
-## Step 5: Interactive Mode (REPL)
+## Step 5: Session Mode
 
 For inspecting multiple areas of the same page without re-opening the browser:
 
 ```bash
-cssprobe-cli interactive https://mysite.com --state ~/.cssprobe-cli/states/mysite.json
-```
+cssprobe-cli open https://mysite.com --state ~/.cssprobe-cli/states/mysite.json
 
-Runtime commands:
+# Run multiple inspections
+cssprobe-cli tree .dialog-A
+cssprobe-cli layout .sidebar-B
+cssprobe-cli findings .modal
+cssprobe-cli inspect .dialog-A --json
 
-```
-inspect> tree .dialog-A               # DOM tree
-inspect> layout .sidebar-B            # ASCII layout diagram
-inspect> sketch .content              # Tree sketch (issues only)
-inspect> findings .modal              # Findings only
-inspect> json .dialog-A               # JSON output
-inspect> report .dialog-A             # Full report
-inspect> .dialog-A                    # Shorthand for report
-inspect> navigate https://other.com   # Navigate to new URL
-inspect> depth 10                     # Set depth
-inspect> help                         # Show help
-inspect> quit                         # Exit
+# Close when done
+cssprobe-cli close
 ```
 
 ---
@@ -228,7 +220,7 @@ confidence: DEFINITE 8 | INDEFINITE 0 | UNVERIFIABLE 1
 → This is expected. Declared values from blocked sheets are marked UNVERIFIABLE. Computed values from getComputedStyle() are still accurate.
 
 **Page needs login**
-→ Use `cssprobe-cli login <url>` for interactive login, or `cssprobe-cli state-import cookies.txt` to import cookies.
+→ Use `cssprobe-cli open <url> --headed` for interactive login, or `cssprobe-cli state-import cookies.txt --name mysite` to import cookies.
 
 ---
 
