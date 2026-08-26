@@ -1,8 +1,8 @@
 /**
- * cssprobe-cli-cli Agent Skill templates.
+ * cssprobe-cli Agent Skill templates.
  *
- * Installed into agent-specific skill directories via `cssprobe-cli-cli skill-install`.
- * Teaches agents how to use cssprobe-cli-cli for runtime CSS inspection — layout,
+ * Installed into agent-specific skill directories via `cssprobe-cli skill-install`.
+ * Teaches agents how to use cssprobe-cli for runtime CSS inspection — layout,
  * scroll, overflow, colors, backgrounds, fonts — with confidence levels.
  */
 
@@ -13,20 +13,20 @@ const BT3 = '```'; // triple backtick
 export function buildSkillMd(): string {
   return [
     FRONTMATTER_DELIM,
-    'name: cssprobe-cli-cli',
+    'name: cssprobe-cli',
     'description: >',
-    '  Runtime CSS probe for layout/scroll/overflow inspection. Use cssprobe-cli-cli to',
+    '  Runtime CSS probe for layout/scroll/overflow inspection. Use cssprobe-cli to',
     '  diagnose CSS issues in live browsers — height chains, scroll containers,',
     '  overflow, flex constraints, containing block hijacks. Produces structured',
     '  reports with DEFINITE/INDEFINITE/UNVERIFIABLE confidence levels.',
     'metadata:',
     '  requires:',
-    '    bins: ["cssprobe-cli-cli", "playwright"]',
+    '    bins: ["cssprobe-cli", "playwright"]',
     FRONTMATTER_DELIM,
     '',
-    '# cssprobe-cli-cli -- Runtime CSS Probe Skill',
+    '# cssprobe-cli -- Runtime CSS Probe Skill',
     '',
-    'Use cssprobe-cli-cli to inspect the runtime CSS of any web page. It launches a real',
+    'Use cssprobe-cli to inspect the runtime CSS of any web page. It launches a real',
     'browser, captures computed styles and DOM structure, and produces a structured',
     'report with confidence levels.',
     '',
@@ -45,9 +45,9 @@ export function buildSkillMd(): string {
     'Do NOT memorize all commands. Use:',
     '',
     BT3 + 'bash',
-    'cssprobe-cli-cli --help                    # all commands grouped by category',
-    'cssprobe-cli-cli inspect --help            # specific command: args, options, description',
-    'cssprobe-cli-cli state-import --help       # cookie import command',
+    'cssprobe-cli --help                    # all commands grouped by category',
+    'cssprobe-cli inspect --help            # specific command: args, options, description',
+    'cssprobe-cli state-import --help       # cookie import command',
     BT3,
     '',
     '## Core Workflow: Inspect a Page',
@@ -81,11 +81,10 @@ export function buildSkillMd(): string {
     '### Option B: Interactive login',
     '',
     BT3 + 'bash',
-    'cssprobe-cli login https://mysite.com',
-    '# Browser opens -> complete login manually -> press Enter',
-    '# State saved to ~/.cssprobe-cli/states/mysite.com.json',
+    'cssprobe-cli open https://mysite.com --headed',
+    '# Browser opens -> complete login manually -> continue inspection',
     '',
-    'cssprobe-cli inspect https://mysite.com/page ".target" --state ~/.cssprobe-cli/states/mysite.com.json',
+    'cssprobe-cli inspect .target',
     BT3,
     '',
     '### Option C: Merge cookies into existing state',
