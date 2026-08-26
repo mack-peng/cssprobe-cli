@@ -10,17 +10,18 @@ import type {
   Evidence,
   Finding,
 } from './types';
+import { pickWinning } from './specificity';
 
 // ─── Confidence helpers ───
 
-/** Pick the winning declared value for a property (inline wins, else first rule). */
+/** Pick the winning declared value for a property (inline wins, else highest specificity). */
 function declaredFor(
   node: { declared: Record<string, DeclaredValue[]> },
   prop: string,
 ): DeclaredValue | null {
   const arr = node.declared && node.declared[prop];
   if (!arr || arr.length === 0) return null;
-  return arr.find(d => d.selector === 'inline') || arr[0];
+  return pickWinning(arr);
 }
 
 /**
@@ -80,10 +81,6 @@ function makeFinding(partial: Omit<Finding, 'evidence' | 'confidence'> & { confi
 }
 
 // ─── Ancestors ───
-
-function findAncestor(ancestors: AncestorNode[], predicate: (a: AncestorNode) => boolean): AncestorNode | undefined {
-  return ancestors.find(predicate);
-}
 
 function allAncestorsContentSized(ancestors: AncestorNode[]): boolean {
   return ancestors.length > 0 && ancestors.every(a => a.shape.heightStrategy === 'content');
@@ -275,7 +272,7 @@ function analyzeFlex(snapshot: Snapshot): Finding[] {
     const pLabel = nodeLabel(parent);
     const cLabel = nodeLabel(child);
     const pDir = parent.props.flexDirection || 'row';
-    const cMinH = parent.props.minHeight;
+    const cMinH = child.props.minHeight;
     const cMinW = child.props.minWidth;
     const cFlexGrow = child.props.flexGrow;
     const cFlexShrink = child.props.flexShrink;

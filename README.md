@@ -318,7 +318,7 @@ cssprobe-cli skill-uninstall
 ```bash
 npm install
 npm run build       # tsc + esbuild collector + daemon entry + generate help.json
-npm test            # Run unit tests (45 tests)
+npm test            # Run unit tests (58 tests)
 npx tsc --noEmit    # Type check only
 ```
 

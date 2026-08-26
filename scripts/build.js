@@ -34,24 +34,7 @@ if (!bundleContent.includes('collect')) {
   console.error('WARNING: collector bundle may not expose collect() correctly');
 }
 
-// 3. Bundle daemon entry point
-console.log('Bundling daemon entry...');
-const daemonEntry = path.join(projectRoot, 'src', 'daemon', 'daemonEntry.ts');
-const daemonOut = path.join(distDir, 'daemonEntry.js');
-
-esbuild.buildSync({
-  entryPoints: [daemonEntry],
-  bundle: true,
-  format: 'cjs',
-  target: 'node18',
-  outfile: daemonOut,
-  sourcemap: false,
-  minify: false,
-  platform: 'node',
-  external: ['playwright-core'],
-});
-
-// 4. Generate help.json
+// 3. Generate help.json
 console.log('Generating help.json...');
 execSync('npx tsx scripts/generate-help.ts', { cwd: projectRoot, stdio: 'inherit' });
 
