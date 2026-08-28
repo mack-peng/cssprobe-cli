@@ -83,19 +83,18 @@ export function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] 
     for (const abs of absChildren) extractedAbs.add(abs);
     const allAbsMerged = [...absChildren, ...extractedDescendants];
     if (allAbsMerged.length > 0 && !flat) {
-      // Group flow children by horizontal overlap — overlapping elements stack in the same column
+      // Group ONLY flow children by horizontal overlap — overlapping flow elements stack in the same column
       const flowGroups: TreeNode[][] = [];
       const sortedFlow = [...flowChildren].sort((a, b) => a.metrics.rect.x - b.metrics.rect.x);
       for (const child of sortedFlow) {
         const cx = child.metrics.rect.x;
         const cr = cx + child.metrics.rect.width;
-        const cmid = (cx + cr) / 2;
         let placed = false;
         for (const group of flowGroups) {
           const gx = group[0].metrics.rect.x;
           const gr = group[0].metrics.rect.x + group[0].metrics.rect.width;
-          const gmid = (gx + gr) / 2;
-          if (cmid >= gx && cmid <= gr || gmid >= cx && gmid <= cr) {
+          // Check if ranges overlap
+          if (cx < gr && gx < cr) {
             group.push(child);
             placed = true;
             break;
@@ -104,17 +103,39 @@ export function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] 
         if (!placed) flowGroups.push([child]);
       }
 
-      // Each group = one column (stacked), each abs element = one column
-      type Column = { nodes: TreeNode[]; isAbs: boolean; width: number };
+      // Each flow group = one column (stacked), each abs element = one column
+      type Column = { nodes: TreeNode[]; isAbs: boolean; width: number; sortX: number };
       const columns: Column[] = [];
       for (const group of flowGroups) {
         const maxW = Math.max(...group.map(c => c.metrics.rect.width));
-        columns.push({ nodes: group, isAbs: false, width: maxW });
+        // Find the largest marginLeft in the subtree — this indicates reserved space for abs elements
+        let maxMarginLeft = 0;
+        function findMaxMargin(node: TreeNode): void {
+          // Parse margin shorthand: "top right bottom left"
+          const margin = node.props?.margin || '';
+          if (margin) {
+            const parts = margin.split(/\s+/);
+            if (parts.length === 4) {
+              const ml = parseFloat(parts[3]);
+              if (!isNaN(ml) && ml > maxMarginLeft) maxMarginLeft = ml;
+            } else if (parts.length === 2) {
+              const ml = parseFloat(parts[1]);
+              if (!isNaN(ml) && ml > maxMarginLeft) maxMarginLeft = ml;
+            } else if (parts.length === 1) {
+              const ml = parseFloat(parts[0]);
+              if (!isNaN(ml) && ml > maxMarginLeft) maxMarginLeft = ml;
+            }
+          }
+          for (const child of node.children) findMaxMargin(child);
+        }
+        for (const g of group) findMaxMargin(g);
+        const effectiveX = group[0].metrics.rect.x + maxMarginLeft;
+        columns.push({ nodes: group, isAbs: false, width: maxW, sortX: effectiveX });
       }
       for (const abs of allAbsMerged) {
-        columns.push({ nodes: [abs], isAbs: true, width: abs.metrics.rect.width });
+        columns.push({ nodes: [abs], isAbs: true, width: abs.metrics.rect.width, sortX: abs.metrics.rect.x });
       }
-      columns.sort((a, b) => a.nodes[0].metrics.rect.x - b.nodes[0].metrics.rect.x);
+      columns.sort((a, b) => a.sortX - b.sortX);
 
       // Assign character widths proportional to pixel widths
       const totalPx = columns.reduce((sum, c) => sum + c.width, 0);
