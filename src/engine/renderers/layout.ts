@@ -74,6 +74,11 @@ export function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] 
           collectAbsDescendants(child, extractedDescendants);
         }
       }
+      // Filter out full-width absolute elements (headers, footers, toolbars)
+      // These should be rendered inline, not as separate columns
+      extractedDescendants = extractedDescendants.filter(abs => {
+        return abs.metrics.rect.width < m.width * 0.8;
+      });
       for (const abs of extractedDescendants) {
         extractedAbs.add(abs);
       }
@@ -81,8 +86,11 @@ export function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] 
 
     // Merge: all absolute elements (direct + extracted) as columns alongside flow children
     // Mark direct abs children as extracted so they're skipped in nested rendering
-    for (const abs of absChildren) extractedAbs.add(abs);
-    const allAbsMerged = [...absChildren, ...extractedDescendants];
+    // Filter out full-width absolute elements (they should be rendered inline)
+    const filteredAbsChildren = absChildren.filter(abs => abs.metrics.rect.width < m.width * 0.8);
+    const filteredExtracted = extractedDescendants.filter(abs => abs.metrics.rect.width < m.width * 0.8);
+    for (const abs of filteredAbsChildren) extractedAbs.add(abs);
+    const allAbsMerged = [...filteredAbsChildren, ...filteredExtracted];
     if (allAbsMerged.length > 0 && !flat) {
       // Group ONLY flow children by horizontal overlap — overlapping flow elements stack in the same column
       const flowGroups: TreeNode[][] = [];
