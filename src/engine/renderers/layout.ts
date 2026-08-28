@@ -9,6 +9,7 @@ export function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] 
   const indentUnit = 2;
   const maxDepth = 8;
   const boxPad = 4;
+  const extractedAbs = new Set<TreeNode>();
 
   const issueLocations = new Set<string>();
   for (const f of findings) {
@@ -20,6 +21,17 @@ export function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] 
     const available = termWidth - usedIndent - boxPad;
     const ratio = nodeW / vpW;
     return Math.max(Math.round(available * ratio), 14);
+  }
+
+  /** Recursively collect all position:absolute nodes in a subtree. */
+  function collectAbsDescendants(node: TreeNode, result: TreeNode[]): void {
+    for (const child of node.children) {
+      if (child.props.position === 'absolute') {
+        result.push(child);
+      } else {
+        collectAbsDescendants(child, result);
+      }
+    }
   }
 
   const lines: string[] = [];
@@ -44,15 +56,46 @@ export function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] 
     const topFillLen = Math.max(0, innerW - labelPart.length - dimPart.length);
     boxLines.push(`${BOX.tl}${BOX.h}${labelPart}${BOX.h.repeat(topFillLen)}${BOX.tr}${dimPart}${issueMark}`);
 
-    // Children — split into normal flow and absolutely positioned
+    // Children — split into normal flow and absolutely positioned (direct children only)
     const allChildren = node.children.filter(c => !(c.metrics.rect.width < 1 && c.metrics.rect.height < 1));
     const flowChildren = allChildren.filter(c => c.props.position !== 'absolute');
     const absChildren = allChildren.filter(c => c.props.position === 'absolute');
 
-    // If there are absolute children, render all children side-by-side by x position
-    if (absChildren.length > 0 && !flat) {
-      const allSorted = [...allChildren].sort((a, b) => a.metrics.rect.x - b.metrics.rect.x);
-      // Assign character widths proportional to pixel widths
+    // If this node is a containing block, find absolute descendants in flow subtrees
+    // that are positioned outside the bounds of their DOM parent — extract them as columns
+    const isContainingBlock = node.props.position !== 'static' || node.containingBlockModifiers.length > 0;
+    let extractedDescendants: TreeNode[] = [];
+    if (isContainingBlock && flowChildren.length > 0 && !flat) {
+      const allAbs: TreeNode[] = [];
+      for (const fc of flowChildren) {
+        collectAbsDescendants(fc, allAbs);
+      }
+      // Find absolute elements outside all flow children bounds
+      for (const abs of allAbs) {
+        const ax = abs.metrics.rect.x;
+        const ay = abs.metrics.rect.y;
+        const ar = ax + abs.metrics.rect.width;
+        const ab = ay + abs.metrics.rect.height;
+        const outsideAll = flowChildren.every(fc => {
+          const fx = fc.metrics.rect.x;
+          const fy = fc.metrics.rect.y;
+          const fr = fx + fc.metrics.rect.width;
+          const fb = fy + fc.metrics.rect.height;
+          return ar < fx - 1 || ax > fr + 1 || ab < fy - 1 || ay > fb + 1;
+        });
+        if (outsideAll) {
+          extractedDescendants.push(abs);
+          extractedAbs.add(abs);
+        }
+      }
+    }
+
+    // Merge: all absolute elements (direct + extracted) as columns alongside flow children
+    // Mark direct abs children as extracted so they're skipped in nested rendering
+    for (const abs of absChildren) extractedAbs.add(abs);
+    const allAbsMerged = [...absChildren, ...extractedDescendants];
+    if (allAbsMerged.length > 0 && !flat) {
+      const allSorted = [...flowChildren, ...allAbsMerged].sort((a, b) => a.metrics.rect.x - b.metrics.rect.x);
       const totalPx = allSorted.reduce((sum, c) => sum + c.metrics.rect.width, 0);
       const childWidths: number[] = [];
       let totalUsed = 0;
@@ -70,8 +113,8 @@ export function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] 
       let maxLines = 0;
       for (let i = 0; i < allSorted.length; i++) {
         const isAbs = allSorted[i].props.position === 'absolute';
-        const absMark = isAbs ? '[abs] ' : '';
-        const box = renderBox(allSorted[i], childWidths[i], depth + 1, true, absMark);
+        const mark = isAbs ? '[abs] ' : '';
+        const box = renderBox(allSorted[i], childWidths[i], depth + 1, true, mark);
         childBoxes.push(box);
         if (box.length > maxLines) maxLines = box.length;
       }
@@ -95,8 +138,8 @@ export function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] 
         boxLines.push(`${BOX.v}${merged}${BOX.v}`);
       }
     } else {
-      // No absolute children — render flow children normally
-      const children = flowChildren;
+      // Standard rendering — skip extracted absolute descendants
+      const children = allChildren.filter(c => !extractedAbs.has(c));
       if (children.length === 0) {
         boxLines.push(`${BOX.v}${' '.repeat(innerW)}${BOX.v}`);
       } else if (flat) {
@@ -149,6 +192,59 @@ export function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] 
 
     boxLines.push(`${BOX.bl}${BOX.h.repeat(innerW)}${BOX.br}`);
     return boxLines;
+  }
+
+  /** Render flow children, skipping any extracted absolute descendants. */
+  function renderFlowOnly(boxLines: string[], flowChildren: TreeNode[], node: TreeNode, m: { width: number }, innerW: number, depth: number, flat: boolean): void {
+    const children = flowChildren.filter(c => !extractedAbs.has(c));
+    if (children.length === 0) {
+      boxLines.push(`${BOX.v}${' '.repeat(innerW)}${BOX.v}`);
+    } else if (flat) {
+      for (const child of children) {
+        const childLabel = nodeLabel(child);
+        const childRepeat = child.repeat && child.repeat > 1 ? ` \u00D7${child.repeat}` : '';
+        const childDim = `${Math.round(child.metrics.rect.width)}\u00D7${Math.round(child.metrics.rect.height)}`;
+        const childLine = ` ${childLabel}${childRepeat} ${childDim} `;
+        if (childLine.length <= innerW) {
+          boxLines.push(`${BOX.v}${childLine}${' '.repeat(innerW - childLine.length)}${BOX.v}`);
+        } else {
+          boxLines.push(`${BOX.v}${childLine.slice(0, innerW)}${BOX.v}`);
+        }
+      }
+    } else if (isMultiColumn(node)) {
+      const expandedCount = children.reduce((sum, c) => sum + (c.repeat && c.repeat > 1 ? c.repeat : 1), 0);
+      if (expandedCount > 1) {
+        const isGrid = node.props.display === 'grid' || node.props.display === 'inline-grid';
+        const childLines = renderFlexChildren(children, innerW, depth + 1, m.width, isGrid);
+        for (const cl of childLines) {
+          boxLines.push(`${BOX.v}${cl}${BOX.v}`);
+        }
+      } else {
+        for (const child of children) {
+          const childBox = renderBox(child, Math.min(boxCharW(child.metrics.rect.width, depth + 1), innerW - 2), depth + 1);
+          for (const cl of childBox) {
+            const line = ` ${cl}`;
+            if (line.length <= innerW + 1) {
+              boxLines.push(`${BOX.v}${line}${' '.repeat(Math.max(0, innerW - line.length + 1))}${BOX.v}`);
+            } else {
+              boxLines.push(`${BOX.v}${line.slice(0, innerW)}${BOX.v}`);
+            }
+          }
+        }
+      }
+    } else {
+      for (const child of children) {
+        const childBox = renderBox(child, Math.min(boxCharW(child.metrics.rect.width, depth + 1), innerW - 2), depth + 1);
+        for (const cl of childBox) {
+          const line = ` ${cl}`;
+          if (line.length <= innerW + 1) {
+            boxLines.push(`${BOX.v}${line}${' '.repeat(Math.max(0, innerW - line.length + 1))}${BOX.v}`);
+          } else {
+            boxLines.push(`${BOX.v}${line.slice(0, innerW)}${BOX.v}`);
+          }
+        }
+      }
+    }
   }
 
   function renderFlexChildren(children: TreeNode[], availW: number, depth: number, parentPxW: number, isGrid: boolean): string[] {
