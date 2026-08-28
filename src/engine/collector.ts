@@ -94,6 +94,7 @@ export function classifyShape(
   const display = cs.display;
   const position = cs.position;
   const flexDir = cs.flexDirection;
+  const floatVal = cs.float;
   const overflowY = cs.overflowY;
   const overflowX = cs.overflowX;
 
@@ -102,6 +103,7 @@ export function classifyShape(
   else if (position === 'absolute') role = 'absolute';
   else if (position === 'sticky') role = 'sticky';
   else if (display === 'grid' || display === 'inline-grid') role = 'grid';
+  else if (floatVal && floatVal !== 'none') role = 'float';
   else if (display === 'flex' || display === 'inline-flex') {
     role = flexDir === 'column' ? 'flex-col' : 'flex-row';
   } else if (display === 'inline' || display === 'inline-block') role = 'inline';
@@ -155,7 +157,7 @@ function collectNode(
     const props: NodeProps = {} as NodeProps;
     const LAYOUT_PROPS = [
       'position', 'display', 'height', 'width', 'minHeight', 'maxHeight',
-      'overflowX', 'overflowY', 'boxSizing', 'margin', 'padding',
+      'overflowX', 'overflowY', 'boxSizing', 'margin', 'padding', 'float',
       'flexDirection', 'flexGrow', 'flexShrink', 'flexBasis', 'alignItems', 'justifyContent',
       'transform', 'filter', 'perspective', 'willChange', 'contain',
       'zIndex', 'top', 'left', 'right', 'bottom', 'visibility', 'opacity',

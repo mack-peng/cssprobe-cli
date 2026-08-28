@@ -59,6 +59,7 @@ export interface NodeProps {
   zIndex?: string;
   margin?: string;
   padding?: string;
+  float?: string;
   transform?: string;
   filter?: string;
   perspective?: string;

@@ -1,6 +1,6 @@
 {
   "name": "cssprobe-cli",
-  "version": "0.2.12",
+  "version": "0.2.14",
   "description": "Runtime CSS probe — inspect layout, colors, backgrounds, fonts and more in a live browser. AI agents and shell automation.",
   "keywords": [
     "css",
