@@ -62,6 +62,7 @@ export function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] 
     const allChildren = node.children.filter(c => !(c.metrics.rect.width < 1 && c.metrics.rect.height < 1));
     const flowChildren = allChildren.filter(c => c.props.position !== 'absolute');
     const absChildren = allChildren.filter(c => c.props.position === 'absolute');
+    const hasFloatedChildren = flowChildren.some(c => c.props.float && c.props.float !== 'none');
 
     // If this node is a containing block, find all absolute descendants for column extraction
     const isContainingBlock = node.props.position !== 'static' || node.containingBlockModifiers.length > 0;
@@ -222,6 +223,80 @@ export function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] 
               }
             }
           }
+        }
+      } else if (hasFloatedChildren) {
+        // Float layout — render floated children as columns
+        const floated = children.filter(c => c.props.float && c.props.float !== 'none');
+
+        // Group floated children by x position overlap
+        const sortedFloated = [...floated].sort((a, b) => a.metrics.rect.x - b.metrics.rect.x);
+        const floatGroups: TreeNode[][] = [];
+        for (const child of sortedFloated) {
+          const cx = child.metrics.rect.x;
+          const cr = cx + child.metrics.rect.width;
+          let placed = false;
+          for (const group of floatGroups) {
+            const gx = group[0].metrics.rect.x;
+            const gr = group[0].metrics.rect.x + group[0].metrics.rect.width;
+            if (cx < gr && gx < cr) {
+              group.push(child);
+              placed = true;
+              break;
+            }
+          }
+          if (!placed) floatGroups.push([child]);
+        }
+
+        type FloatCol = { nodes: TreeNode[]; width: number };
+        const floatCols: FloatCol[] = [];
+        for (const group of floatGroups) {
+          const maxW = Math.max(...group.map(c => c.metrics.rect.width));
+          floatCols.push({ nodes: group, width: maxW });
+        }
+        floatCols.sort((a, b) => a.nodes[0].metrics.rect.x - b.nodes[0].metrics.rect.x);
+
+        const totalPx = floatCols.reduce((sum, c) => sum + c.width, 0);
+        const colWidths: number[] = [];
+        let totalUsed = 0;
+        for (let i = 0; i < floatCols.length; i++) {
+          const ratio = floatCols[i].width / totalPx;
+          const w = Math.max(Math.round(innerW * ratio), 14);
+          colWidths.push(w);
+          totalUsed += w;
+        }
+        if (colWidths.length > 0 && innerW > totalUsed) {
+          colWidths[colWidths.length - 1] += innerW - totalUsed;
+        }
+
+        const colBoxes: string[][] = [];
+        let maxLines = 0;
+        for (let i = 0; i < floatCols.length; i++) {
+          const lines: string[] = [];
+          for (const n of floatCols[i].nodes) {
+            const box = renderBox(n, colWidths[i], depth + 1, true);
+            lines.push(...box);
+          }
+          colBoxes.push(lines);
+          if (lines.length > maxLines) maxLines = lines.length;
+        }
+
+        for (let lineIdx = 0; lineIdx < maxLines; lineIdx++) {
+          let merged = '';
+          for (let i = 0; i < colBoxes.length; i++) {
+            const w = colWidths[i];
+            if (i > 0) merged += ' ';
+            if (lineIdx < colBoxes[i].length) {
+              const line = colBoxes[i][lineIdx];
+              if (line.length < w) {
+                merged += line + ' '.repeat(w - line.length);
+              } else {
+                merged += line.slice(0, w);
+              }
+            } else {
+              merged += ' '.repeat(w);
+            }
+          }
+          boxLines.push(`${BOX.v}${merged}${BOX.v}`);
         }
       } else {
         for (const child of children) {
