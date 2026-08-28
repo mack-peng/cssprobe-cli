@@ -28,7 +28,9 @@ export function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] 
     for (const child of node.children) {
       if (child.props.position === 'absolute') {
         result.push(child);
+        // Don't recurse into absolute children — they're collected as units
       } else {
+        // Recurse into non-absolute children to find deeper absolute descendants
         collectAbsDescendants(child, result);
       }
     }
@@ -61,32 +63,18 @@ export function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] 
     const flowChildren = allChildren.filter(c => c.props.position !== 'absolute');
     const absChildren = allChildren.filter(c => c.props.position === 'absolute');
 
-    // If this node is a containing block, find absolute descendants in flow subtrees
-    // that are positioned outside the bounds of their DOM parent — extract them as columns
+    // If this node is a containing block, find all absolute descendants for column extraction
     const isContainingBlock = node.props.position !== 'static' || node.containingBlockModifiers.length > 0;
     let extractedDescendants: TreeNode[] = [];
-    if (isContainingBlock && flowChildren.length > 0 && !flat) {
-      const allAbs: TreeNode[] = [];
-      for (const fc of flowChildren) {
-        collectAbsDescendants(fc, allAbs);
-      }
-      // Find absolute elements outside all flow children bounds
-      for (const abs of allAbs) {
-        const ax = abs.metrics.rect.x;
-        const ay = abs.metrics.rect.y;
-        const ar = ax + abs.metrics.rect.width;
-        const ab = ay + abs.metrics.rect.height;
-        const outsideAll = flowChildren.every(fc => {
-          const fx = fc.metrics.rect.x;
-          const fy = fc.metrics.rect.y;
-          const fr = fx + fc.metrics.rect.width;
-          const fb = fy + fc.metrics.rect.height;
-          return ar < fx - 1 || ax > fr + 1 || ab < fy - 1 || ay > fb + 1;
-        });
-        if (outsideAll) {
-          extractedDescendants.push(abs);
-          extractedAbs.add(abs);
+    if (isContainingBlock && !flat) {
+      // Collect from ALL children (not just flow) — absolute children in any subtree
+      for (const child of allChildren) {
+        if (child.props.position !== 'absolute') {
+          collectAbsDescendants(child, extractedDescendants);
         }
+      }
+      for (const abs of extractedDescendants) {
+        extractedAbs.add(abs);
       }
     }
 
@@ -95,37 +83,76 @@ export function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] 
     for (const abs of absChildren) extractedAbs.add(abs);
     const allAbsMerged = [...absChildren, ...extractedDescendants];
     if (allAbsMerged.length > 0 && !flat) {
-      const allSorted = [...flowChildren, ...allAbsMerged].sort((a, b) => a.metrics.rect.x - b.metrics.rect.x);
-      const totalPx = allSorted.reduce((sum, c) => sum + c.metrics.rect.width, 0);
-      const childWidths: number[] = [];
+      // Group flow children by horizontal overlap — overlapping elements stack in the same column
+      const flowGroups: TreeNode[][] = [];
+      const sortedFlow = [...flowChildren].sort((a, b) => a.metrics.rect.x - b.metrics.rect.x);
+      for (const child of sortedFlow) {
+        const cx = child.metrics.rect.x;
+        const cr = cx + child.metrics.rect.width;
+        const cmid = (cx + cr) / 2;
+        let placed = false;
+        for (const group of flowGroups) {
+          const gx = group[0].metrics.rect.x;
+          const gr = group[0].metrics.rect.x + group[0].metrics.rect.width;
+          const gmid = (gx + gr) / 2;
+          if (cmid >= gx && cmid <= gr || gmid >= cx && gmid <= cr) {
+            group.push(child);
+            placed = true;
+            break;
+          }
+        }
+        if (!placed) flowGroups.push([child]);
+      }
+
+      // Each group = one column (stacked), each abs element = one column
+      type Column = { nodes: TreeNode[]; isAbs: boolean; width: number };
+      const columns: Column[] = [];
+      for (const group of flowGroups) {
+        const maxW = Math.max(...group.map(c => c.metrics.rect.width));
+        columns.push({ nodes: group, isAbs: false, width: maxW });
+      }
+      for (const abs of allAbsMerged) {
+        columns.push({ nodes: [abs], isAbs: true, width: abs.metrics.rect.width });
+      }
+      columns.sort((a, b) => a.nodes[0].metrics.rect.x - b.nodes[0].metrics.rect.x);
+
+      // Assign character widths proportional to pixel widths
+      const totalPx = columns.reduce((sum, c) => sum + c.width, 0);
+      const colWidths: number[] = [];
       let totalUsed = 0;
-      for (let i = 0; i < allSorted.length; i++) {
-        const ratio = allSorted[i].metrics.rect.width / totalPx;
+      for (let i = 0; i < columns.length; i++) {
+        const ratio = columns[i].width / totalPx;
         const w = Math.max(Math.round(innerW * ratio), 14);
-        childWidths.push(w);
+        colWidths.push(w);
         totalUsed += w;
       }
-      if (childWidths.length > 0 && innerW > totalUsed) {
-        childWidths[childWidths.length - 1] += innerW - totalUsed;
+      if (colWidths.length > 0 && innerW > totalUsed) {
+        colWidths[colWidths.length - 1] += innerW - totalUsed;
       }
 
-      const childBoxes: string[][] = [];
+      // Render each column
+      const colBoxes: string[][] = [];
       let maxLines = 0;
-      for (let i = 0; i < allSorted.length; i++) {
-        const isAbs = allSorted[i].props.position === 'absolute';
-        const mark = isAbs ? '[abs] ' : '';
-        const box = renderBox(allSorted[i], childWidths[i], depth + 1, true, mark);
-        childBoxes.push(box);
-        if (box.length > maxLines) maxLines = box.length;
+      for (let i = 0; i < columns.length; i++) {
+        const col = columns[i];
+        const lines: string[] = [];
+        for (const node of col.nodes) {
+          const mark = col.isAbs ? '[abs] ' : '';
+          const box = renderBox(node, colWidths[i], depth + 1, true, mark);
+          lines.push(...box);
+        }
+        colBoxes.push(lines);
+        if (lines.length > maxLines) maxLines = lines.length;
       }
 
+      // Merge columns side by side
       for (let lineIdx = 0; lineIdx < maxLines; lineIdx++) {
         let merged = '';
-        for (let i = 0; i < childBoxes.length; i++) {
-          const w = childWidths[i];
+        for (let i = 0; i < colBoxes.length; i++) {
+          const w = colWidths[i];
           if (i > 0) merged += ' ';
-          if (lineIdx < childBoxes[i].length) {
-            const line = childBoxes[i][lineIdx];
+          if (lineIdx < colBoxes[i].length) {
+            const line = colBoxes[i][lineIdx];
             if (line.length < w) {
               merged += line + ' '.repeat(w - line.length);
             } else {
