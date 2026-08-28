@@ -2,19 +2,75 @@
 
 Runtime CSS probe — inspect layout, scroll, colors, backgrounds, fonts and more in a live browser. Built for both humans and AI agents.
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22.5.0-brightgreen.svg)](https://nodejs.org/)
+
+---
+
+## Why cssprobe-cli?
+
+When an AI agent needs to debug CSS — why is this element overflowing, what's the actual rendered layout, is this container scrollable — it can't see the browser. It guesses from static code, missing runtime-only issues like overflow, scroll chains, and containing block hijacks.
+
+**cssprobe-cli gives the agent eyes.** It opens a real browser, collects computed styles and metrics via injected JavaScript, analyzes them with a confidence model, and returns structured findings — all in one command. The agent asks a question about any selector and gets back the DOM tree, ASCII layout diagram, overflow warnings, and scroll diagnosis without leaving the terminal.
+
+---
+
 ## Installation
 
 ### For Humans
 
-```bash
-npm install -g cssprobe-cli
+Copy and paste this prompt to your LLM agent (Claude Code, Cursor, Codex, etc.):
+
 ```
+Install and configure cssprobe-cli by following the instructions here:
+https://raw.githubusercontent.com/mack-peng/cssprobe-cli/main/docs/guide/installation.md
+```
+
+Or read the [Installation Guide](docs/guide/installation.md), but seriously, let an agent do it. Humans fat-finger configs.
 
 ### For LLM Agents
 
+Fetch the installation guide and follow it:
+
 ```bash
+curl -s https://raw.githubusercontent.com/mack-peng/cssprobe-cli/main/docs/guide/installation.md
+```
+
+Or install directly:
+
+```bash
+npm install -g cssprobe-cli
 cssprobe-cli skill-install
 ```
+
+---
+
+## How It Works
+
+```
+┌───────────────────────────────────────────────────────────┐
+│                      AI Agent                              │
+│                                                           │
+│  "Is .sidebar overflowing?"                               │
+│      calls: cssprobe-cli inspect .sidebar                 │
+│                             │                             │
+└─────────────────────────────┬─────────────────────────────┘
+                              │
+                              ▼
+┌───────────────────────────────────────────────────────────┐
+│                  cssprobe-cli daemon                       │
+│                                                           │
+│  collector (IIFE) → analyzer (pure) → renderer (md/json)  │
+│                             │                             │
+│                             ▼                             │
+│               Playwright browser (Chromium)                │
+│     getBoundingClientRect · getComputedStyle · DOM walk    │
+└───────────────────────────────────────────────────────────┘
+```
+
+1. **Session** — `open` spawns a daemon process managing a browser. Commands connect via Unix socket.
+2. **Collector** — Injected as IIFE into the page. Walks the DOM, reads computed styles, declared values, and element metrics.
+3. **Analyzer** — Pure Node.js functions. Classifies findings with confidence levels (DEFINITE / INDEFINITE / UNVERIFIABLE).
+4. **Renderer** — Outputs Markdown (default) or JSON. Includes ASCII layout diagram, DOM tree, and findings.
 
 ---
 
@@ -26,14 +82,8 @@ cssprobe-cli skill-install
 # Open browser (non-blocking, starts daemon session)
 cssprobe-cli open https://getbootstrap.com/docs/5.3/examples/checkout
 
-# Open with custom viewport
-cssprobe-cli open https://example.com --viewport 1280x720
-
 # Inspect with CSS selector
 cssprobe-cli inspect .container
-
-# Show DOM tree
-cssprobe-cli tree .container --depth 3
 
 # Show ASCII layout diagram
 cssprobe-cli layout .container
@@ -53,65 +103,18 @@ cssprobe-cli open https://mysite.com --headed
 
 # User manually logs in...
 
-# Run diagnosis on authenticated page
-cssprobe-cli inspect .dashboard
+# Save session state for future use
+cssprobe-cli playwright "page.context().storageState({path: 'state.json'})"
 
-# Inject CSS to test changes
-cssprobe-cli inject-css ".sidebar { background: #f0f0f0; }"
-
-# Take screenshot
-cssprobe-cli screenshot
-
-# Close when done
-cssprobe-cli close
+# Reopen with saved state (no login needed)
+cssprobe-cli open https://mysite.com --state state.json --headed
 ```
 
-### 3. Import Cookies
+### 3. JSON Output
 
 ```bash
-# Import cookies from browser export (Netscape format)
-cssprobe-cli state-import cookies.txt --out ~/.cssprobe-cli/states/mysite.json
-
-# Or use --name for simpler syntax
-cssprobe-cli state-import cookies.txt --name mysite
-
-# Open browser with saved state
-cssprobe-cli open https://mysite.com --state ~/.cssprobe-cli/states/mysite.json
-```
-
-### 4. JSON Output
-
-```bash
-cssprobe-cli open https://getbootstrap.com/docs/5.3/examples/checkout
 cssprobe-cli inspect body --json
 cssprobe-cli inspect body --json | jq '.findings[] | {id, confidence, message}'
-cssprobe-cli close
-```
-
----
-
-## Session Mode
-
-cssprobe-cli uses a session-based architecture for non-browser interaction:
-
-```bash
-# Start session (opens browser, returns immediately)
-cssprobe-cli open <url>
-
-# Run commands (each command is independent, non-blocking)
-cssprobe-cli inspect <selector>
-cssprobe-cli tree <selector>
-cssprobe-cli layout <selector>
-cssprobe-cli findings <selector>
-cssprobe-cli inject-css <css>
-cssprobe-cli screenshot
-cssprobe-cli eval <expression>
-
-# Check session status
-cssprobe-cli status
-
-# End session (closes browser)
-cssprobe-cli close
 ```
 
 ---
@@ -120,122 +123,58 @@ cssprobe-cli close
 
 ### Session Management
 
-```bash
-cssprobe-cli open [url]           # Open browser in session mode (non-blocking)
-cssprobe-cli open [url] --viewport 1280x720  # Open with custom viewport
-cssprobe-cli open [url] --state ~/.cssprobe-cli/states/mysite.json  # Open with saved state
-cssprobe-cli close                # Close browser session
-cssprobe-cli status               # Show session status
-```
+| Command | Description |
+|---------|-------------|
+| `open [url]` | Open browser in session mode (non-blocking) |
+| `open [url] --headed` | Show browser window |
+| `open [url] --state <file>` | Open with saved cookies + localStorage |
+| `open [url] --viewport 1280x720` | Custom viewport size |
+| `close` | Close browser session |
+| `status` | Show session status |
 
 ### CSS Inspection
 
-```bash
-cssprobe-cli inspect <selector>   # Full CSS diagnosis
-cssprobe-cli tree <selector>      # DOM tree structure
-cssprobe-cli layout <selector>    # ASCII layout diagram
-cssprobe-cli findings <selector>  # Only issues/warnings/errors
-```
+| Command | Description |
+|---------|-------------|
+| `inspect <selector>` | Full CSS diagnosis (computed values, declared values, findings) |
+| `inspect <selector> --layout` | Include ASCII layout diagram |
+| `inspect <selector> --brief` | Compact: tree sketch + warnings/errors only |
+| `inspect <selector> --json` | Structured JSON output |
+| `tree <selector>` | DOM tree structure |
+| `layout <selector>` | ASCII layout diagram |
+| `findings <selector>` | Only issues/warnings/errors |
 
 ### CSS Injection
 
-```bash
-cssprobe-cli inject-css <css>     # Inject CSS into current page
-```
+| Command | Description |
+|---------|-------------|
+| `inject-css <css>` | Inject CSS into current page |
 
 ### Browser
 
-```bash
-cssprobe-cli resize <width> <height>  # Resize browser viewport
-cssprobe-cli eval <expression>    # Evaluate JavaScript (browser context)
-cssprobe-cli playwright <call>    # Execute Playwright API (Node.js context)
-cssprobe-cli screenshot           # Take screenshot
-```
+| Command | Description |
+|---------|-------------|
+| `resize <width> <height>` | Resize browser viewport |
+| `eval <expression>` | Evaluate JavaScript (browser context) |
+| `playwright <call>` | Execute Playwright API (Node.js context) |
+| `screenshot` | Take screenshot |
 
 ### State
 
-```bash
-cssprobe-cli state-import [file]  # Import cookies from Netscape format
-```
+| Command | Description |
+|---------|-------------|
+| `state-import <file>` | Import cookies from Netscape format |
 
 ### Configuration
 
-```bash
-cssprobe-cli config-show          # Show current config
-cssprobe-cli config-set <key> <value>  # Set config value
-cssprobe-cli config-list          # List all profiles
-cssprobe-cli config-use <name>    # Switch active profile
-cssprobe-cli config-new <name>    # Create new profile
-cssprobe-cli config-path          # Show config file path
-```
-
----
-
-## inspect Options
-
-```bash
-cssprobe-cli inspect <selector> [options]
-
-Arguments:
-  <selector>                  CSS selector for root element
-
-Options:
-  --json                      Output structured JSON
-  --brief                     Compact output: tree sketch + warnings/errors only
-  --layout                    ASCII layout diagram
-  --depth <n>                 DOM tree depth (default: auto, max 20)
-```
-
----
-
-## tree Options
-
-```bash
-cssprobe-cli tree <selector> [options]
-
-Arguments:
-  <selector>                  CSS selector for root element
-
-Options:
-  --depth <n>                 Tree depth (default: auto, max 20)
-```
-
----
-
-## inject-css
-
-```bash
-cssprobe-cli inject-css <css>
-
-Arguments:
-  <css>                       CSS code to inject into the current page
-```
-
----
-
-## state-import
-
-Import cookies from Netscape format (browser export standard) into a Playwright state file.
-
-```bash
-# From file
-cssprobe-cli state-import cookies.txt --out mystate.json
-
-# From file with custom name (saves to ~/.cssprobe-cli/states/<name>.json)
-cssprobe-cli state-import cookies.txt --name mysite
-
-# From stdin
-cat cookies.txt | cssprobe-cli state-import --out mystate.json
-
-# Merge into existing state
-cssprobe-cli state-import new-cookies.txt --merge existing.json --out merged.json
-```
-
-Netscape format (tab-separated):
-```
-.example.com	TRUE	/	TRUE	1813025057	session_id	abc123
-.example.com	TRUE	/	FALSE	-1	lang	zh-CN
-```
+| Command | Description |
+|---------|-------------|
+| `config-show` | Show current config |
+| `config-set <key> <value>` | Set config value |
+| `config-list` | List all profiles |
+| `config-use <name>` | Switch active profile |
+| `config-new <name>` | Create new profile |
+| `config-path` | Show config file path |
 
 ---
 
@@ -261,14 +200,10 @@ cssprobe-cli config-set browser chromium
 cssprobe-cli config-set depth 8
 cssprobe-cli config-set viewport 375x812
 
-# Show current config
-cssprobe-cli config-show
-
 # Profile management
 cssprobe-cli config-new staging
 cssprobe-cli -p staging config-set browser firefox
 cssprobe-cli config-use staging
-cssprobe-cli config-list
 ```
 
 Priority: CLI flags > Environment variables > Config file
@@ -285,31 +220,13 @@ Config file: `~/.cssprobe-clirc`
 
 ---
 
-## Agent Skill
+## Supported Platforms
 
-```bash
-# Install skill for all detected agents
-cssprobe-cli skill-install
-
-# Install for a specific agent
-cssprobe-cli skill-install --target opencode
-cssprobe-cli skill-install --target claude
-
-# Remove installed skills
-cssprobe-cli skill-uninstall
-```
-
----
-
-## Global Options
-
-```
---json              Output as JSON (default: Markdown)
---raw               Output raw result without formatting
---help [command]    Show help for a command or global
---version           Show version
--p, --profile       Use named config profile
-```
+| Platform | Architectures |
+|----------|---------------|
+| macOS | x64, arm64 |
+| Linux | x64, arm64 |
+| Windows | x64, arm64 |
 
 ---
 
