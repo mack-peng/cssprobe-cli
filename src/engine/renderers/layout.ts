@@ -24,12 +24,12 @@ export function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] 
 
   const lines: string[] = [];
 
-  function renderBox(node: TreeNode, charW: number, depth: number, flat = false): string[] {
+  function renderBox(node: TreeNode, charW: number, depth: number, flat = false, absMark = ''): string[] {
     const m = node.metrics.rect;
     const dimStr = `${Math.round(m.width)}\u00D7${Math.round(m.height)}`;
     const innerW = Math.max(charW - 2, 1);
-    const label = smartLabel(node, innerW - 4);
-    const hasIssue = issueLocations.has(label);
+    const label = absMark + smartLabel(node, innerW - 4 - absMark.length);
+    const hasIssue = issueLocations.has(label.replace(absMark, ''));
     const issueMark = hasIssue ? ' \u26A0' : '';
     const repeat = node.repeat && node.repeat > 1 ? node.repeat : 1;
     const boxLines: string[] = [];
@@ -49,7 +49,54 @@ export function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] 
     const flowChildren = allChildren.filter(c => c.props.position !== 'absolute');
     const absChildren = allChildren.filter(c => c.props.position === 'absolute');
 
-    function renderFlowChildren(children: TreeNode[]): void {
+    // If there are absolute children, render all children side-by-side by x position
+    if (absChildren.length > 0 && !flat) {
+      const allSorted = [...allChildren].sort((a, b) => a.metrics.rect.x - b.metrics.rect.x);
+      // Assign character widths proportional to pixel widths
+      const totalPx = allSorted.reduce((sum, c) => sum + c.metrics.rect.width, 0);
+      const childWidths: number[] = [];
+      let totalUsed = 0;
+      for (let i = 0; i < allSorted.length; i++) {
+        const ratio = allSorted[i].metrics.rect.width / totalPx;
+        const w = Math.max(Math.round(innerW * ratio), 14);
+        childWidths.push(w);
+        totalUsed += w;
+      }
+      if (childWidths.length > 0 && innerW > totalUsed) {
+        childWidths[childWidths.length - 1] += innerW - totalUsed;
+      }
+
+      const childBoxes: string[][] = [];
+      let maxLines = 0;
+      for (let i = 0; i < allSorted.length; i++) {
+        const isAbs = allSorted[i].props.position === 'absolute';
+        const absMark = isAbs ? '[abs] ' : '';
+        const box = renderBox(allSorted[i], childWidths[i], depth + 1, true, absMark);
+        childBoxes.push(box);
+        if (box.length > maxLines) maxLines = box.length;
+      }
+
+      for (let lineIdx = 0; lineIdx < maxLines; lineIdx++) {
+        let merged = '';
+        for (let i = 0; i < childBoxes.length; i++) {
+          const w = childWidths[i];
+          if (i > 0) merged += ' ';
+          if (lineIdx < childBoxes[i].length) {
+            const line = childBoxes[i][lineIdx];
+            if (line.length < w) {
+              merged += line + ' '.repeat(w - line.length);
+            } else {
+              merged += line.slice(0, w);
+            }
+          } else {
+            merged += ' '.repeat(w);
+          }
+        }
+        boxLines.push(`${BOX.v}${merged}${BOX.v}`);
+      }
+    } else {
+      // No absolute children — render flow children normally
+      const children = flowChildren;
       if (children.length === 0) {
         boxLines.push(`${BOX.v}${' '.repeat(innerW)}${BOX.v}`);
       } else if (flat) {
@@ -97,22 +144,6 @@ export function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] 
             }
           }
         }
-      }
-    }
-
-    renderFlowChildren(flowChildren);
-
-    // Absolutely positioned children — render as single-line markers
-    for (const abs of absChildren) {
-      const absLabel = nodeLabel(abs);
-      const absDim = `${Math.round(abs.metrics.rect.width)}\u00D7${Math.round(abs.metrics.rect.height)}`;
-      const relX = Math.round(abs.metrics.rect.x - m.x);
-      const relY = Math.round(abs.metrics.rect.y - m.y);
-      const absLine = ` [abs] ${absLabel} ${absDim} @ (${relX},${relY}) `;
-      if (absLine.length <= innerW) {
-        boxLines.push(`${BOX.v}${absLine}${' '.repeat(innerW - absLine.length)}${BOX.v}`);
-      } else {
-        boxLines.push(`${BOX.v}${absLine.slice(0, innerW)}${BOX.v}`);
       }
     }
 
