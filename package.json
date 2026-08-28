@@ -1,6 +1,6 @@
 {
   "name": "cssprobe-cli",
-  "version": "0.2.20",
+  "version": "0.2.21",
   "description": "Runtime CSS probe — inspect layout, colors, backgrounds, fonts and more in a live browser. AI agents and shell automation.",
   "keywords": [
     "css",
@@ -14,7 +14,10 @@
     "automation"
   ],
   "homepage": "https://github.com/mack-peng/cssprobe-cli#readme",
-  "repository": "github:mack-peng/cssprobe-cli",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mack-peng/cssprobe-cli.git"
+  },
   "license": "MIT",
   "author": "strikingly",
   "main": "dist/index.js",
