@@ -44,30 +44,46 @@ export function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] 
     const topFillLen = Math.max(0, innerW - labelPart.length - dimPart.length);
     boxLines.push(`${BOX.tl}${BOX.h}${labelPart}${BOX.h.repeat(topFillLen)}${BOX.tr}${dimPart}${issueMark}`);
 
-    // Children
-    const children = node.children.filter(c => !(c.metrics.rect.width < 1 && c.metrics.rect.height < 1));
-    if (children.length === 0) {
-      boxLines.push(`${BOX.v}${' '.repeat(innerW)}${BOX.v}`);
-    } else if (flat) {
-      for (const child of children) {
-        const childLabel = nodeLabel(child);
-        const childRepeat = child.repeat && child.repeat > 1 ? ` \u00D7${child.repeat}` : '';
-        const childDim = `${Math.round(child.metrics.rect.width)}\u00D7${Math.round(child.metrics.rect.height)}`;
-        const childLine = ` ${childLabel}${childRepeat} ${childDim} `;
-        if (childLine.length <= innerW) {
-          boxLines.push(`${BOX.v}${childLine}${' '.repeat(innerW - childLine.length)}${BOX.v}`);
-        } else {
-          boxLines.push(`${BOX.v}${childLine.slice(0, innerW)}${BOX.v}`);
+    // Children — split into normal flow and absolutely positioned
+    const allChildren = node.children.filter(c => !(c.metrics.rect.width < 1 && c.metrics.rect.height < 1));
+    const flowChildren = allChildren.filter(c => c.props.position !== 'absolute');
+    const absChildren = allChildren.filter(c => c.props.position === 'absolute');
+
+    function renderFlowChildren(children: TreeNode[]): void {
+      if (children.length === 0) {
+        boxLines.push(`${BOX.v}${' '.repeat(innerW)}${BOX.v}`);
+      } else if (flat) {
+        for (const child of children) {
+          const childLabel = nodeLabel(child);
+          const childRepeat = child.repeat && child.repeat > 1 ? ` \u00D7${child.repeat}` : '';
+          const childDim = `${Math.round(child.metrics.rect.width)}\u00D7${Math.round(child.metrics.rect.height)}`;
+          const childLine = ` ${childLabel}${childRepeat} ${childDim} `;
+          if (childLine.length <= innerW) {
+            boxLines.push(`${BOX.v}${childLine}${' '.repeat(innerW - childLine.length)}${BOX.v}`);
+          } else {
+            boxLines.push(`${BOX.v}${childLine.slice(0, innerW)}${BOX.v}`);
+          }
         }
-      }
-    } else if (isMultiColumn(node)) {
-      // Calculate expanded count (considering repeat)
-      const expandedCount = children.reduce((sum, c) => sum + (c.repeat && c.repeat > 1 ? c.repeat : 1), 0);
-      if (expandedCount > 1) {
-        const isGrid = node.props.display === 'grid' || node.props.display === 'inline-grid';
-        const childLines = renderFlexChildren(children, innerW, depth + 1, m.width, isGrid);
-        for (const cl of childLines) {
-          boxLines.push(`${BOX.v}${cl}${BOX.v}`);
+      } else if (isMultiColumn(node)) {
+        const expandedCount = children.reduce((sum, c) => sum + (c.repeat && c.repeat > 1 ? c.repeat : 1), 0);
+        if (expandedCount > 1) {
+          const isGrid = node.props.display === 'grid' || node.props.display === 'inline-grid';
+          const childLines = renderFlexChildren(children, innerW, depth + 1, m.width, isGrid);
+          for (const cl of childLines) {
+            boxLines.push(`${BOX.v}${cl}${BOX.v}`);
+          }
+        } else {
+          for (const child of children) {
+            const childBox = renderBox(child, Math.min(boxCharW(child.metrics.rect.width, depth + 1), innerW - 2), depth + 1);
+            for (const cl of childBox) {
+              const line = ` ${cl}`;
+              if (line.length <= innerW + 1) {
+                boxLines.push(`${BOX.v}${line}${' '.repeat(Math.max(0, innerW - line.length + 1))}${BOX.v}`);
+              } else {
+                boxLines.push(`${BOX.v}${line.slice(0, innerW)}${BOX.v}`);
+              }
+            }
+          }
         }
       } else {
         for (const child of children) {
@@ -82,17 +98,21 @@ export function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] 
           }
         }
       }
-    } else {
-      for (const child of children) {
-        const childBox = renderBox(child, Math.min(boxCharW(child.metrics.rect.width, depth + 1), innerW - 2), depth + 1);
-        for (const cl of childBox) {
-          const line = ` ${cl}`;
-          if (line.length <= innerW + 1) {
-            boxLines.push(`${BOX.v}${line}${' '.repeat(Math.max(0, innerW - line.length + 1))}${BOX.v}`);
-          } else {
-            boxLines.push(`${BOX.v}${line.slice(0, innerW)}${BOX.v}`);
-          }
-        }
+    }
+
+    renderFlowChildren(flowChildren);
+
+    // Absolutely positioned children — render as single-line markers
+    for (const abs of absChildren) {
+      const absLabel = nodeLabel(abs);
+      const absDim = `${Math.round(abs.metrics.rect.width)}\u00D7${Math.round(abs.metrics.rect.height)}`;
+      const relX = Math.round(abs.metrics.rect.x - m.x);
+      const relY = Math.round(abs.metrics.rect.y - m.y);
+      const absLine = ` [abs] ${absLabel} ${absDim} @ (${relX},${relY}) `;
+      if (absLine.length <= innerW) {
+        boxLines.push(`${BOX.v}${absLine}${' '.repeat(innerW - absLine.length)}${BOX.v}`);
+      } else {
+        boxLines.push(`${BOX.v}${absLine.slice(0, innerW)}${BOX.v}`);
       }
     }
 
