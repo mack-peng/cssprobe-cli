@@ -194,59 +194,6 @@ export function renderLayout(snapshot: Snapshot, findings: Finding[]): string[] 
     return boxLines;
   }
 
-  /** Render flow children, skipping any extracted absolute descendants. */
-  function renderFlowOnly(boxLines: string[], flowChildren: TreeNode[], node: TreeNode, m: { width: number }, innerW: number, depth: number, flat: boolean): void {
-    const children = flowChildren.filter(c => !extractedAbs.has(c));
-    if (children.length === 0) {
-      boxLines.push(`${BOX.v}${' '.repeat(innerW)}${BOX.v}`);
-    } else if (flat) {
-      for (const child of children) {
-        const childLabel = nodeLabel(child);
-        const childRepeat = child.repeat && child.repeat > 1 ? ` \u00D7${child.repeat}` : '';
-        const childDim = `${Math.round(child.metrics.rect.width)}\u00D7${Math.round(child.metrics.rect.height)}`;
-        const childLine = ` ${childLabel}${childRepeat} ${childDim} `;
-        if (childLine.length <= innerW) {
-          boxLines.push(`${BOX.v}${childLine}${' '.repeat(innerW - childLine.length)}${BOX.v}`);
-        } else {
-          boxLines.push(`${BOX.v}${childLine.slice(0, innerW)}${BOX.v}`);
-        }
-      }
-    } else if (isMultiColumn(node)) {
-      const expandedCount = children.reduce((sum, c) => sum + (c.repeat && c.repeat > 1 ? c.repeat : 1), 0);
-      if (expandedCount > 1) {
-        const isGrid = node.props.display === 'grid' || node.props.display === 'inline-grid';
-        const childLines = renderFlexChildren(children, innerW, depth + 1, m.width, isGrid);
-        for (const cl of childLines) {
-          boxLines.push(`${BOX.v}${cl}${BOX.v}`);
-        }
-      } else {
-        for (const child of children) {
-          const childBox = renderBox(child, Math.min(boxCharW(child.metrics.rect.width, depth + 1), innerW - 2), depth + 1);
-          for (const cl of childBox) {
-            const line = ` ${cl}`;
-            if (line.length <= innerW + 1) {
-              boxLines.push(`${BOX.v}${line}${' '.repeat(Math.max(0, innerW - line.length + 1))}${BOX.v}`);
-            } else {
-              boxLines.push(`${BOX.v}${line.slice(0, innerW)}${BOX.v}`);
-            }
-          }
-        }
-      }
-    } else {
-      for (const child of children) {
-        const childBox = renderBox(child, Math.min(boxCharW(child.metrics.rect.width, depth + 1), innerW - 2), depth + 1);
-        for (const cl of childBox) {
-          const line = ` ${cl}`;
-          if (line.length <= innerW + 1) {
-            boxLines.push(`${BOX.v}${line}${' '.repeat(Math.max(0, innerW - line.length + 1))}${BOX.v}`);
-          } else {
-            boxLines.push(`${BOX.v}${line.slice(0, innerW)}${BOX.v}`);
-          }
-        }
-      }
-    }
-  }
-
   function renderFlexChildren(children: TreeNode[], availW: number, depth: number, parentPxW: number, isGrid: boolean): string[] {
     // Expand repeat nodes into multiple copies
     const expanded: TreeNode[] = [];
