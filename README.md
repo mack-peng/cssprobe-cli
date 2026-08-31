@@ -130,6 +130,7 @@ cssprobe-cli inspect body --json | jq '.findings[] | {id, confidence, message}'
 | `open [url] --state <file>` | Open with saved cookies + localStorage |
 | `open [url] --viewport 1280x720` | Custom viewport size |
 | `close` | Close browser session |
+| `close --all` | Close all sessions across all workspaces |
 | `status` | Show session status |
 
 ### CSS Inspection
