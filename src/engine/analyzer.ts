@@ -231,9 +231,13 @@ function analyzeScroll(snapshot: Snapshot): Finding[] {
       id = 'no-overflow';
       message = `${nodeLabel(n)} no overflow, no scroll needed`;
       level = 'info';
+    } else if (n.props.overflowY === 'visible') {
+      id = 'overflow-visible';
+      message = `${nodeLabel(n)} content visually overflows (${n.metrics.scrollHeight}>${n.metrics.clientHeight}) but overflow=visible means content is NOT clipped`;
+      level = 'info';
     } else {
       id = 'overflow-clipped';
-      message = `${nodeLabel(n)} content overflows (${n.metrics.scrollHeight}>${n.metrics.clientHeight}) clipped by overflow=${n.props.overflowY} → height chain unconstrained (anchor issue)`;
+      message = `${nodeLabel(n)} content overflows (${n.metrics.scrollHeight}>${n.metrics.clientHeight}) clipped by overflow=${n.props.overflowY}`;
       level = 'warning';
     }
 
