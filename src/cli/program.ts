@@ -6,7 +6,7 @@ import { parseCommand } from './command';
 import { commands } from './commands';
 import { TextOutput, JsonOutput } from './output';
 import { loadConfig, maskConfig, writeRcConfig, getRcConfig, setActiveProfile, createProfile, rcFilePath } from '../config/config';
-import { Session, loadSession, createClientInfo } from '../daemon/session';
+import { Session, loadSession, createClientInfo, listAllSessions } from '../daemon/session';
 import type { Output } from './output';
 import type { MinimistArgs } from './minimist';
 import type { AnyCommandSchema, HelpData, HelpEntry } from './command';
@@ -49,7 +49,7 @@ export async function program() {
       await handleOpen(command!, rawArgs, output);
       return;
     case 'close':
-      await handleClose(output);
+      await handleClose(command!, rawArgs, output);
       return;
     case 'status':
       await handleStatus(output);
@@ -199,20 +199,48 @@ async function waitForSession(timeoutMs: number): Promise<Session | undefined> {
   return undefined;
 }
 
-async function handleClose(output: Output) {
+async function handleClose(command: AnyCommandSchema, args: MinimistArgs, output: Output) {
   try {
-    const session = await loadSession();
-    if (!session) {
-      output.error('No active session. Run: cssprobe-cli open <url>');
-      return;
-    }
-
-    await session.stop();
-
-    if (output.json) {
-      console.log(JSON.stringify({ closed: true, sessionId: 'default' }, null, 2));
+    const cmdArgs = splitArgs(args);
+    const parsed = parseCommand(command, cmdArgs as Record<string, string> & { _: string[] });
+    
+    if (parsed.all) {
+      const sessions = await listAllSessions();
+      if (sessions.length === 0) {
+        output.error('No active sessions found.');
+        return;
+      }
+      
+      const results = [];
+      for (const session of sessions) {
+        try {
+          await session.stop();
+          results.push({ sessionId: session.name, closed: true });
+        } catch (e) {
+          results.push({ sessionId: session.name, closed: false, error: (e as Error).message });
+        }
+      }
+      
+      if (output.json) {
+        console.log(JSON.stringify({ closed: results }, null, 2));
+      } else {
+        const closedCount = results.filter(r => r.closed).length;
+        console.log(`Closed ${closedCount} session(s).`);
+      }
     } else {
-      console.log('Browser closed.');
+      const session = await loadSession();
+      if (!session) {
+        output.error('No active session. Run: cssprobe-cli open <url>');
+        return;
+      }
+
+      await session.stop();
+
+      if (output.json) {
+        console.log(JSON.stringify({ closed: true, sessionId: 'default' }, null, 2));
+      } else {
+        console.log('Browser closed.');
+      }
     }
   } catch (e: any) {
     output.error(e instanceof Error ? e.message : String(e));

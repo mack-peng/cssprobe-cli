@@ -276,3 +276,27 @@ export async function deleteSession(): Promise<void> {
   const sessionFile = path.join(clientInfo.daemonProfilesDir, 'default.session');
   await fs.promises.unlink(sessionFile).catch(() => {});
 }
+
+export async function listAllSessions(): Promise<Session[]> {
+  const sessions: Session[] = [];
+  const baseDir = path.dirname(createClientInfo().daemonProfilesDir);
+  
+  try {
+    const entries = await fs.promises.readdir(baseDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const sessionFile = path.join(baseDir, entry.name, 'default.session');
+      try {
+        const data = await fs.promises.readFile(sessionFile, 'utf-8');
+        const config = JSON.parse(data) as SessionConfig;
+        sessions.push(new Session({ file: sessionFile, config, daemonDir: path.join(baseDir, entry.name) }));
+      } catch {
+        // Skip invalid session files
+      }
+    }
+  } catch {
+    // Base directory doesn't exist
+  }
+  
+  return sessions;
+}
