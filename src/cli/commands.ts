@@ -33,6 +33,9 @@ const close = declareCommand({
   name: 'close',
   category: 'core',
   description: 'Close the browser session',
+  options: z.object({
+    all: z.boolean().optional().describe('close all sessions across all workspaces'),
+  }),
 });
 
 const status = declareCommand({
