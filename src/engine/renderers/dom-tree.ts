@@ -5,7 +5,7 @@ export function renderNode(node: TreeNode, indent: number): string[] {
   if (!node) return lines;
   const cls = node.classes.length ? `.${node.classes.join('.')}` : '';
   const id = node.id ? `#${node.id}` : '';
-  const repeat = node.repeat ? ` \u00D7${node.repeat}` : '';
+  const repeat = node.repeat ? ` \u00D7${node.repeat} (first shown, use :nth-child(N) for others)` : '';
   const m = node.metrics;
   const s = node.shape || {};
   const flag: string[] = [];
