@@ -104,7 +104,7 @@ cssprobe-cli open https://mysite.com --headed
 # User manually logs in...
 
 # Save session state for future use
-cssprobe-cli playwright "page.context().storageState({path: 'state.json'})"
+cssprobe-cli state-save --name mysite
 
 # Reopen with saved state (no login needed)
 cssprobe-cli open https://mysite.com --state state.json --headed
@@ -158,7 +158,7 @@ cssprobe-cli inspect body --json | jq '.findings[] | {id, confidence, message}'
 | `resize <width> <height>` | Resize browser viewport |
 | `eval <expression>` | Evaluate JavaScript (browser context) |
 | `playwright <call>` | Execute Playwright API (Node.js context) |
-| `screenshot` | Take screenshot |
+| `screenshot` | Take screenshot (saves to ~/.cssprobe-cli/screenshots/, --out to override) |
 
 ### State
 
@@ -191,6 +191,34 @@ Every finding carries a confidence level:
 | **UNVERIFIABLE** | Declared value missing or from blocked cross-origin stylesheet |
 
 The report header shows: `confidence: DEFINITE 8 | INDEFINITE 0 | UNVERIFIABLE 1`
+
+---
+
+## Complementary Tool: cssgraph
+
+cssprobe-cli is a **runtime** CSS probe — it opens a real browser and reads what is actually rendered. For **static** questions about the source code — where is `.btn-primary` defined, what cascades over it, which components reference it, what would change if I edited it — use [cssgraph](https://github.com/mack-peng/cssgraph), a local SQLite knowledge graph of every className, property, variable, and at-rule in your stylesheets. The two tools complement each other:
+
+| | cssgraph (static) | cssprobe-cli (runtime) |
+|---|---|---|
+| Analyzes | source code (CSS/SCSS/Less + JSX/TSX + templates) | live browser (computed styles + DOM) |
+| Answers | where a class is defined, cascade, impact, unused CSS | actual rendered layout, overflow, scroll, height chains |
+| When | before/without a browser | after static analysis, to verify at runtime |
+| Usage | `cssgraph init` + `explore`/`rule`/`impact` | `open` + `inspect`/`layout`/`findings` |
+
+**Recommended workflow for a style problem** — go static first, then verify at runtime:
+
+```bash
+# 1. Static: find the definitions, cascade, and blast radius (cssgraph)
+cssgraph explore .btn-primary
+cssgraph cascade .btn-primary
+
+# 2. Runtime: confirm what actually renders (cssprobe-cli)
+cssprobe-cli open https://example.com
+cssprobe-cli inspect .btn-primary
+cssprobe-cli findings .btn-primary
+```
+
+Install: `npm install -g cssgraph` (requires Node.js >= 22.5.0). It exposes 12 MCP tools (`cssgraph_explore`, `cssgraph_rule`, `cssgraph_impact`, …) plus CLI commands. See [npm](https://www.npmjs.com/package/cssgraph) / [GitHub](https://github.com/mack-peng/cssgraph).
 
 ---
 

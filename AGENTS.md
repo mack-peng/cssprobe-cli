@@ -72,8 +72,11 @@ src/
 ### Browser
 - `resize <width> <height>` — Resize browser viewport
 - `eval <expression>` — Evaluate JavaScript (browser context)
+  - Returns raw string values (not JSON-quoted) for string results
 - `playwright <call>` — Execute Playwright API call (Node.js context)
+  - Returns `{ ok: true, value: null, note: ... }` when the call returns no value; throws a clear error message on failure
 - `screenshot` — Take a screenshot
+  - `--out <path>` — Output file path (default: `~/.cssprobe-cli/screenshots/<timestamp>.png`)
 
 ### State
 - `state-import [file]` — Import cookies from Netscape format

@@ -230,7 +230,7 @@ confidence: DEFINITE 8 | INDEFINITE 0 | UNVERIFIABLE 1
 → Run `npm run build` in the cssprobe-cli project directory.
 
 **Cross-origin stylesheet blocked**
-→ This is expected. Declared values from blocked sheets are marked UNVERIFIABLE. Computed values from getComputedStyle() are still accurate.
+→ This is expected. The report lists blocked stylesheet URLs (from CDN/cross-origin) with full paths. Declared values from those sheets are marked UNVERIFIABLE, but computed values from getComputedStyle() are still accurate.
 
 **Page needs login**
 → Use `cssprobe-cli open <url> --headed` for interactive login, then `cssprobe-cli state-save --name mysite` to save the session, or `cssprobe-cli state-import cookies.txt --name mysite` to import cookies.
@@ -261,6 +261,33 @@ For agents that trust copy-paste:
 ```bash
 npm install -g cssprobe-cli && npx playwright install chromium && cssprobe-cli inspect https://getbootstrap.com/docs/5.3/examples/checkout body
 ```
+
+---
+
+## Complementary Tool: cssgraph
+
+cssprobe-cli answers **runtime** questions — what a page actually renders. For **static** questions about the source — where a class is defined, what cascades over it, which components reference it, what a change would affect — install [cssgraph](https://github.com/mack-peng/cssgraph). It builds a local SQLite knowledge graph of every className, property, variable, and at-rule from your stylesheets (CSS/SCSS/Less + JSX/TSX + templates), 100% local.
+
+```bash
+npm install -g cssgraph        # requires Node.js >= 22.5.0
+cd your-project
+cssgraph init                  # build the knowledge graph
+```
+
+**Work together — static first, runtime to verify:**
+
+```bash
+# 1. Static (cssgraph): locate definitions, cascade, impact
+cssgraph explore .modal
+cssgraph rule ".modal > .content"
+
+# 2. Runtime (cssprobe-cli): confirm actual rendering
+cssprobe-cli open https://example.com
+cssprobe-cli inspect .modal
+cssprobe-cli findings .modal
+```
+
+cssgraph also ships an MCP server with 12 tools (`cssgraph_explore`, `cssgraph_callers`, `cssgraph_impact`, `cssgraph_rule`, …) so an agent can answer static CSS questions in one call. See [npm](https://www.npmjs.com/package/cssgraph) / [GitHub](https://github.com/mack-peng/cssgraph).
 
 ---
 
