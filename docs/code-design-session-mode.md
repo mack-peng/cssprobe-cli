@@ -387,7 +387,8 @@ CLI 输出: {"success":true}
 
 | 旧命令 | 新命令 | 说明 |
 |--------|--------|------|
-| `login <url>` | `open <url>` → 手动登录 → `save-state` | 流程变化 |
+| `login <url>` | `open <url>` → 手动登录 → `state-save` | 流程变化 |
 | `inspect <url> --wait` | `open <url>` → 手动操作 → `inspect <selector>` | 流程变化 |
 | `interactive <url>` | `open <url>` → 多次 `inspect`/`tree`/`inject-css` | 流程变化 |
 | `state-import` | 保留 | 不变 |
+| `state-save` | 新增 | 保存当前会话 cookies + localStorage |
