@@ -165,6 +165,7 @@ cssprobe-cli inspect body --json | jq '.findings[] | {id, confidence, message}'
 | Command | Description |
 |---------|-------------|
 | `state-import <file>` | Import cookies from Netscape format |
+| `state-save` | Save current browser session state (cookies + localStorage) |
 
 ### Configuration
 

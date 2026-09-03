@@ -88,7 +88,7 @@ cssprobe-cli inspect https://getbootstrap.com/docs/5.3/examples/checkout body --
 
 ## Step 4: Login-Protected Pages
 
-Many pages require authentication. cssprobe-cli supports three approaches:
+Many pages require authentication. cssprobe-cli supports these approaches:
 
 ### Option A: Import Cookies from Browser Export
 
@@ -114,13 +114,26 @@ cssprobe-cli open https://mysite.com --headed
 cssprobe-cli inspect .target
 ```
 
-### Option C: Merge Cookies into Existing State
+### Option C: Interactive Login + Save State (recommended for reuse)
+
+```bash
+cssprobe-cli open https://mysite.com --headed
+# Browser opens -> complete login manually
+cssprobe-cli state-save --name mysite
+# Saves to ~/.cssprobe-cli/states/mysite.json
+
+# Later, reuse the saved state
+cssprobe-cli open https://mysite.com --state ~/.cssprobe-cli/states/mysite.json
+cssprobe-cli inspect .target
+```
+
+### Option D: Merge Cookies into Existing State
 
 ```bash
 cssprobe-cli state-import new-cookies.txt --merge existing-state.json --out updated.json
 ```
 
-### Option D: Open with Saved State
+### Option E: Open with Saved State
 
 ```bash
 # Import cookies first
@@ -220,7 +233,7 @@ confidence: DEFINITE 8 | INDEFINITE 0 | UNVERIFIABLE 1
 → This is expected. Declared values from blocked sheets are marked UNVERIFIABLE. Computed values from getComputedStyle() are still accurate.
 
 **Page needs login**
-→ Use `cssprobe-cli open <url> --headed` for interactive login, or `cssprobe-cli state-import cookies.txt --name mysite` to import cookies.
+→ Use `cssprobe-cli open <url> --headed` for interactive login, then `cssprobe-cli state-save --name mysite` to save the session, or `cssprobe-cli state-import cookies.txt --name mysite` to import cookies.
 
 ---
 
