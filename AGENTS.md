@@ -47,7 +47,7 @@ src/
 - **Command dispatch**: `minimist` parse → `parseCommand()` Zod validate → session command execution via daemon socket.
 - **Output strategy**: `Output` interface → `TextOutput` (Markdown for inspect, tables for lists) / `JsonOutput` (machine-readable JSON).
 - **Config priority**: CLI flags → env vars → `~/.cssprobe-clirc` profiles. Switch with `-p <profile>`.
-- **State management**: `state-import` converts Netscape cookies. Session persists browser state until `close`.
+- **State management**: `state-import` converts Netscape cookies; `state-save` persists the current session's cookies + localStorage after manual login. Session persists browser state until `close`.
 - **Browser discovery**: `findBrowserExecutable()` scans `~/Library/Caches/ms-playwright/chromium-*` for existing Chrome installations.
 - **Error format**: `Error: <message>` → JSON mode: `{ isError: true, error: "<message>" }` → `process.exit(1)`
 
@@ -72,14 +72,19 @@ src/
 ### Browser
 - `resize <width> <height>` — Resize browser viewport
 - `eval <expression>` — Evaluate JavaScript (browser context)
+  - Returns raw string values (not JSON-quoted) for string results
 - `playwright <call>` — Execute Playwright API call (Node.js context)
+  - Returns `{ ok: true, value: null, note: ... }` when the call returns no value; throws a clear error message on failure
 - `screenshot` — Take a screenshot
+  - `--out <path>` — Output file path (default: `~/.cssprobe-cli/screenshots/<timestamp>.png`)
 
 ### State
 - `state-import [file]` — Import cookies from Netscape format
   - `--out <file>` — Output state file path (default: `~/.cssprobe-cli/states/imported.json`)
   - `--name <name>` — Custom name for the state file (e.g. `mysite` or `mysite.json`)
   - `--merge <file>` — Existing state file to merge into
+- `state-save` — Save current browser session state (cookies + localStorage)
+  - `--name <name>` — State file name (default: `session`)
 
 ### Config
 - `config-show` / `config-set` / `config-list` / `config-use` / `config-new` / `config-path`
