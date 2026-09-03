@@ -334,10 +334,38 @@ async function handleSessionCommand(
     if (args.json) runArgs.json = true;
     const result = await session.run(runArgs);
 
+    // Screenshot: save the base64 data URL to a file and report the path
+    if (commandName === 'screenshot' && typeof result.text === 'string' && result.text.startsWith('data:image/png;base64,')) {
+      const saved = saveScreenshotFile(result.text, parsed.out as string | undefined);
+      if (output.json) {
+        console.log(JSON.stringify({ saved }, null, 2));
+      } else {
+        console.log(`Screenshot saved: ${saved}`);
+      }
+      return;
+    }
+
     console.log(result.text);
   } catch (e: any) {
     output.error(e instanceof Error ? e.message : String(e));
   }
+}
+
+function saveScreenshotFile(dataUrl: string, out?: string): string {
+  const base64 = dataUrl.replace(/^data:image\/png;base64,/, '');
+  const buffer = Buffer.from(base64, 'base64');
+  const resolvedOut = out
+    ? path.resolve(out)
+    : (() => {
+        const dir = path.join(os.homedir(), '.cssprobe-cli', 'screenshots');
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+        return path.join(dir, `screenshot-${ts}.png`);
+      })();
+  const dir = path.dirname(resolvedOut);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(resolvedOut, buffer);
+  return resolvedOut;
 }
 
 // ── config commands ──

@@ -58,9 +58,9 @@ export function renderMarkdown(snapshot: Snapshot, findings: Finding[], brief = 
   if (snapshot.crossOriginBlocked && snapshot.crossOriginBlocked > 0) {
     lines.push('');
     lines.push('## Cross-origin limitation');
-    lines.push(`\u26A0 ${snapshot.crossOriginBlocked} stylesheet(s) blocked by browser security (SecurityError). Declared values from these sheets are marked UNVERIFIABLE \u2014 computed values from getComputedStyle() are still accurate.`);
+    lines.push(`\u26A0 ${snapshot.crossOriginBlocked} stylesheet(s) from CDN/cross-origin were blocked by browser security (SecurityError). Declared values from these sheets are marked UNVERIFIABLE \u2014 computed styles from getComputedStyle() are still accurate.`);
     if (snapshot.blockedSheetUrls && snapshot.blockedSheetUrls.length > 0) {
-      lines.push(`Blocked: ${snapshot.blockedSheetUrls.join(', ')}`);
+      lines.push(`Blocked (from CDN/cross-origin): ${snapshot.blockedSheetUrls.join(', ')}`);
     }
   }
 

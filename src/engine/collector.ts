@@ -51,8 +51,8 @@ function matchDeclarations(
     } catch (_e) {
       accessible = false;
       crossOriginBlocked.count++;
-      const short = (sheet.href || 'unknown').split('/').pop() || 'unknown';
-      if (!blockedSheetUrls.includes(short)) blockedSheetUrls.push(short);
+      const href = (sheet.href || 'unknown').replace(/^https?:\/\//, '');
+      if (!blockedSheetUrls.includes(href)) blockedSheetUrls.push(href);
       continue;
     }
     if (!rules) continue;

@@ -213,6 +213,8 @@ async function executeCommand(
         throw new Error('Browser is not open. Run: cssprobe-cli open <url>');
 
       const result = await page.evaluate(expression);
+      if (typeof result === 'string') return { text: result };
+      if (result === undefined) return { text: 'undefined' };
       return { text: JSON.stringify(result, null, 2) };
     }
 
@@ -243,6 +245,8 @@ async function executeCommand(
       const asyncFunction = new AsyncFunction('page', 'browser', `return ${call}`);
       const browser = page.context().browser();
       const result = await asyncFunction(page, browser);
+      if (result === undefined)
+        return { text: JSON.stringify({ ok: true, value: null, note: 'call returned no value' }) };
       return { text: JSON.stringify(result, null, 2) };
     }
 
