@@ -108,6 +108,7 @@ const screenshot = declareCommand({
   description: 'Take a screenshot of the current page',
   options: z.object({
     'full-page': z.boolean().optional().describe('take screenshot of the full scrollable page'),
+    out: z.string().optional().describe('output file path (default: ~/.cssprobe-cli/screenshots/<timestamp>.png)'),
   }),
 });
 
