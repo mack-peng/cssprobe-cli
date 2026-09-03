@@ -155,6 +155,15 @@ const stateImport = declareCommand({
   }),
 });
 
+const stateSave = declareCommand({
+  name: 'state-save',
+  category: 'core',
+  description: 'Save current browser session state (cookies + localStorage)',
+  options: z.object({
+    name: z.string().optional().describe('state file name (default: session)'),
+  }),
+});
+
 // ── config ──
 
 const configShow = declareCommand({
@@ -243,7 +252,7 @@ const commandsArray: AnyCommandSchema[] = [
   // browser
   resize, evalCmd, playwrightCmd, screenshot,
   // state
-  stateImport,
+  stateImport, stateSave,
   // config
   configShow, configSet, configList, configUse, configNew, configPath,
   // skill

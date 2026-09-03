@@ -246,6 +246,14 @@ async function executeCommand(
       return { text: JSON.stringify(result, null, 2) };
     }
 
+    case 'state-save': {
+      const context = launcher.getContext();
+      if (!context)
+        throw new Error('Browser is not open. Run: cssprobe-cli open <url>');
+      const state = await context.storageState();
+      return { text: JSON.stringify(state) };
+    }
+
     default:
       throw new Error(`Unknown command: ${command}`);
   }

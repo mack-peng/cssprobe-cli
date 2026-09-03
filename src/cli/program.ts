@@ -57,6 +57,9 @@ export async function program() {
     case 'state-import':
       await handleStateImport(command!, rawArgs, output);
       return;
+    case 'state-save':
+      await handleStateSave(command!, rawArgs, output);
+      return;
     case 'inspect':
     case 'tree':
     case 'layout':
@@ -574,6 +577,54 @@ async function handleStateImport(
       imported: newCookies.length,
       usage: `cssprobe-cli inspect <url> <selector> --state ${resolvedOut}`,
     }));
+  } catch (e: any) {
+    output.error(e instanceof Error ? e.message : String(e));
+  }
+}
+
+// ── state-save ──
+
+async function handleStateSave(
+  command: AnyCommandSchema,
+  args: MinimistArgs,
+  output: Output
+) {
+  try {
+    const session = await loadSession();
+    if (!session) {
+      output.error('No active session. Run: cssprobe-cli open <url>');
+      return;
+    }
+
+    const cmdArgs = splitArgs(args);
+    const parsed = parseCommand(command, cmdArgs as Record<string, string> & { _: string[] });
+
+    const name = (parsed.name as string) || 'session';
+    const fileName = name.endsWith('.json') ? name : `${name}.json`;
+    const outPath = path.join(os.homedir(), '.cssprobe-cli', 'states', fileName);
+
+    // Ask daemon to save state
+    const result = await session.run({ _: ['state-save'] });
+    const state = JSON.parse(result.text);
+
+    const resolvedOut = path.resolve(outPath);
+    const dir = path.dirname(resolvedOut);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(resolvedOut, JSON.stringify(state, null, 2) + '\n');
+
+    if (output.json) {
+      console.log(JSON.stringify({
+        saved: resolvedOut,
+        cookies: state.cookies?.length || 0,
+        origins: state.origins?.length || 0,
+        usage: `cssprobe-cli open <url> --state ${resolvedOut}`,
+      }, null, 2));
+    } else {
+      console.log(`State saved: ${resolvedOut}`);
+      console.log(`Cookies: ${state.cookies?.length || 0}`);
+      console.log(`Origins: ${state.origins?.length || 0}`);
+      console.log(`Usage: cssprobe-cli open <url> --state ${resolvedOut}`);
+    }
   } catch (e: any) {
     output.error(e instanceof Error ? e.message : String(e));
   }

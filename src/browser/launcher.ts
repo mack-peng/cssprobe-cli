@@ -139,6 +139,11 @@ export class BrowserLauncher {
     return this.page;
   }
 
+  /** Get the current browser context. */
+  getContext(): BrowserContext | null {
+    return this.context;
+  }
+
   async close(): Promise<void> {
     if (this.context) await this.context.close().catch(() => {});
     if (this.browser) await this.browser.close().catch(() => {});
