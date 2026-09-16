@@ -119,6 +119,30 @@ cssprobe-cli inspect body --json
 cssprobe-cli inspect body --json | jq '.findings[] | {id, confidence, message}'
 ```
 
+### 4. Use as an MCP Server (AI clients)
+
+cssprobe-cli ships an MCP server (stdio), so AI clients call it as a native tool — no shell needed:
+
+```bash
+cssprobe-cli mcp-install          # auto-detect and configure installed clients
+cssprobe-cli mcp-install --target=claude,cursor,codex
+cssprobe-cli mcp-install --local  # write project-scoped config
+```
+
+Manual configuration for any MCP client:
+
+```json
+{
+  "mcpServers": {
+    "cssprobe-cli": { "command": "cssprobe-cli", "args": ["mcp"] }
+  }
+}
+```
+
+Exposes 10 tools: `cssprobe_open`, `cssprobe_inspect`, `cssprobe_tree`, `cssprobe_layout`,
+`cssprobe_findings`, `cssprobe_eval`, `cssprobe_screenshot`, `cssprobe_inject_css`,
+`cssprobe_close`, `cssprobe_status`. Remove with `cssprobe-cli mcp-uninstall`.
+
 ---
 
 ## Commands

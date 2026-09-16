@@ -6,7 +6,9 @@ import { parseCommand } from './command';
 import { commands } from './commands';
 import { TextOutput, JsonOutput } from './output';
 import { loadConfig, maskConfig, writeRcConfig, getRcConfig, setActiveProfile, createProfile, rcFilePath } from '../config/config';
-import { Session, loadSession, createClientInfo, listAllSessions } from '../daemon/session';
+import { loadSession } from '../daemon/session';
+import { openSession, closeSession, getSessionStatus, runSessionCommand, saveScreenshotFile } from './session-ops';
+import { runMcpServer } from '../mcp';
 import type { Output } from './output';
 import type { MinimistArgs } from './minimist';
 import type { AnyCommandSchema, HelpData, HelpEntry } from './command';
@@ -43,8 +45,14 @@ export async function program() {
   if (handleSkillCommands(commandName!, command!, rawArgs, output))
     return;
 
+  if (handleMcpInstallCommands(commandName!, command!, rawArgs, output))
+    return;
+
   // Session-based commands
   switch (commandName) {
+    case 'mcp':
+      await runMcpServer();
+      return;
     case 'open':
       await handleOpen(command!, rawArgs, output);
       return;
@@ -134,13 +142,8 @@ async function handleOpen(
     const cmdArgs = splitArgs(args);
     const parsed = parseCommand(command, cmdArgs as Record<string, string> & { _: string[] });
 
-    const url = parsed.url as string || 'about:blank';
-    const browser = (parsed.browser as string) || 'chromium';
-    const headed = !!parsed.headed;
-    const viewportStr = parsed.viewport as string | undefined;
-    const state = parsed.state as string | undefined;
-    
     // Parse viewport
+    const viewportStr = parsed.viewport as string | undefined;
     let viewport: { width: number; height: number } | undefined;
     if (viewportStr) {
       const parts = viewportStr.split('x');
@@ -157,93 +160,45 @@ async function handleOpen(
       viewport = { width, height };
     }
 
-    // Start daemon
-    const { pid } = await Session.startDaemon({
-      browser,
-      headed,
+    const result = await openSession({
+      url: parsed.url as string | undefined,
+      browser: parsed.browser as string | undefined,
+      headed: !!parsed.headed,
       viewport,
-      state,
-      _: ['open', url],
-    }, 'open');
-
-    // Wait for the daemon to be ready (poll session file instead of fixed delay)
-    const session = await waitForSession(5000);
-    if (!session)
-      throw new Error('Daemon failed to become ready within 5s. Check the daemon log for errors.');
-    await session.run({ _: ['goto', url] });
-
-    const result = {
-      sessionId: 'default',
-      pid,
-      url,
-      viewport: viewport || { width: 1280, height: 720 },
-    };
+      state: parsed.state as string | undefined,
+    });
 
     if (output.json) {
       console.log(JSON.stringify(result, null, 2));
     } else {
-      console.log(`Browser opened at ${url}`);
-      console.log(`Session ID: default`);
-      console.log(`PID: ${pid}`);
-      console.log(`Viewport: ${viewport?.width || 1280}x${viewport?.height || 720}`);
+      console.log(`Browser opened at ${result.url}`);
+      console.log(`Session ID: ${result.sessionId}`);
+      console.log(`PID: ${result.pid}`);
+      console.log(`Viewport: ${result.viewport.width}x${result.viewport.height}`);
     }
   } catch (e: any) {
     output.error(e instanceof Error ? e.message : String(e));
   }
 }
 
-async function waitForSession(timeoutMs: number): Promise<Session | undefined> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const session = await loadSession();
-    if (session && await session.canConnect()) return session;
-    await new Promise(resolve => setTimeout(resolve, 100));
-  }
-  return undefined;
-}
-
 async function handleClose(command: AnyCommandSchema, args: MinimistArgs, output: Output) {
   try {
     const cmdArgs = splitArgs(args);
     const parsed = parseCommand(command, cmdArgs as Record<string, string> & { _: string[] });
-    
-    if (parsed.all) {
-      const sessions = await listAllSessions();
-      if (sessions.length === 0) {
-        output.error('No active sessions found.');
-        return;
-      }
-      
-      const results = [];
-      for (const session of sessions) {
-        try {
-          await session.stop();
-          results.push({ sessionId: session.name, closed: true });
-        } catch (e) {
-          results.push({ sessionId: session.name, closed: false, error: (e as Error).message });
-        }
-      }
-      
-      if (output.json) {
-        console.log(JSON.stringify({ closed: results }, null, 2));
-      } else {
-        const closedCount = results.filter(r => r.closed).length;
-        console.log(`Closed ${closedCount} session(s).`);
-      }
+
+    const result = await closeSession(!!parsed.all);
+
+    if (output.json) {
+      console.log(JSON.stringify(
+        parsed.all ? { closed: result.sessions } : { closed: true, sessionId: 'default' },
+        null,
+        2
+      ));
+    } else if (parsed.all) {
+      const closedCount = result.sessions.filter(r => r.closed).length;
+      console.log(`Closed ${closedCount} session(s).`);
     } else {
-      const session = await loadSession();
-      if (!session) {
-        output.error('No active session. Run: cssprobe-cli open <url>');
-        return;
-      }
-
-      await session.stop();
-
-      if (output.json) {
-        console.log(JSON.stringify({ closed: true, sessionId: 'default' }, null, 2));
-      } else {
-        console.log('Browser closed.');
-      }
+      console.log('Browser closed.');
     }
   } catch (e: any) {
     output.error(e instanceof Error ? e.message : String(e));
@@ -252,32 +207,22 @@ async function handleClose(command: AnyCommandSchema, args: MinimistArgs, output
 
 async function handleStatus(output: Output) {
   try {
-    const session = await loadSession();
-    if (!session) {
-      const result = { sessionId: 'default', alive: false };
-      if (output.json) {
-        console.log(JSON.stringify(result, null, 2));
-      } else {
-        console.log('No active session.');
-      }
-      return;
-    }
-
-    const canConnect = await session.canConnect();
-    const result = {
-      sessionId: 'default',
-      alive: canConnect,
-      config: session.config,
-    };
+    const result = await getSessionStatus();
 
     if (output.json) {
       console.log(JSON.stringify(result, null, 2));
-    } else {
-      console.log(`Session: default`);
-      console.log(`Status: ${canConnect ? 'alive' : 'dead'}`);
-      if (canConnect) {
-        console.log(`Browser: ${session.config.browser.browserName}`);
-      }
+      return;
+    }
+
+    if (!result.config) {
+      console.log('No active session.');
+      return;
+    }
+
+    console.log(`Session: default`);
+    console.log(`Status: ${result.alive ? 'alive' : 'dead'}`);
+    if (result.alive) {
+      console.log(`Browser: ${result.config.browser.browserName}`);
     }
   } catch (e: any) {
     output.error(e instanceof Error ? e.message : String(e));
@@ -291,48 +236,10 @@ async function handleSessionCommand(
   output: Output
 ) {
   try {
-    const session = await loadSession();
-    if (!session) {
-      output.error('No active session. Run: cssprobe-cli open <url>');
-      return;
-    }
-
     const cmdArgs = splitArgs(args);
     const parsed = parseCommand(command, cmdArgs as Record<string, string> & { _: string[] });
 
-    // Build command args for daemon
-    const daemonArgs: string[] = [commandName];
-    
-    // Add positional args
-    if (command.args) {
-      const argsSchema = command.args;
-      const argNames = Object.keys(argsSchema.shape);
-      for (const name of argNames) {
-        if (parsed[name] !== undefined) {
-          daemonArgs.push(String(parsed[name]));
-        }
-      }
-    }
-
-    // Add options
-    if (command.options) {
-      const optionsSchema = command.options;
-      const optionNames = Object.keys(optionsSchema.shape);
-      for (const name of optionNames) {
-        if (parsed[name] !== undefined) {
-          if (typeof parsed[name] === 'boolean') {
-            if (parsed[name]) daemonArgs.push(`--${name}`);
-          } else {
-            daemonArgs.push(`--${name}=${parsed[name]}`);
-          }
-        }
-      }
-    }
-
-    // Run command in session
-    const runArgs: MinimistArgs = { ...cmdArgs, _: daemonArgs };
-    if (args.json) runArgs.json = true;
-    const result = await session.run(runArgs);
+    const result = await runSessionCommand(commandName, command, parsed, !!args.json);
 
     // Screenshot: save the base64 data URL to a file and report the path
     if (commandName === 'screenshot' && typeof result.text === 'string' && result.text.startsWith('data:image/png;base64,')) {
@@ -349,23 +256,6 @@ async function handleSessionCommand(
   } catch (e: any) {
     output.error(e instanceof Error ? e.message : String(e));
   }
-}
-
-function saveScreenshotFile(dataUrl: string, out?: string): string {
-  const base64 = dataUrl.replace(/^data:image\/png;base64,/, '');
-  const buffer = Buffer.from(base64, 'base64');
-  const resolvedOut = out
-    ? path.resolve(out)
-    : (() => {
-        const dir = path.join(os.homedir(), '.cssprobe-cli', 'screenshots');
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        const ts = new Date().toISOString().replace(/[:.]/g, '-');
-        return path.join(dir, `screenshot-${ts}.png`);
-      })();
-  const dir = path.dirname(resolvedOut);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(resolvedOut, buffer);
-  return resolvedOut;
 }
 
 // ── config commands ──
@@ -434,7 +324,7 @@ function handleConfigCommands(
 
 // ── skill commands ──
 
-import { resolveTargetFlag, type Location } from '../installer';
+import { resolveTargetFlag, installMcpConfig, uninstallMcpConfig, type Location } from '../installer';
 
 function handleSkillCommands(
   commandName: string,
@@ -471,6 +361,35 @@ function handleSkillCommands(
     }
 
     const summary = files.map(f => `${f.agent}: ${f.action} ${f.path}`);
+    console.log(output.format({ files: summary }));
+    return true;
+  } catch (e: any) {
+    output.error(e instanceof Error ? e.message : String(e));
+  }
+
+  return false;
+}
+
+// ── mcp-install commands ──
+
+function handleMcpInstallCommands(
+  commandName: string,
+  command: AnyCommandSchema,
+  args: MinimistArgs,
+  output: Output
+): boolean {
+  if (commandName !== 'mcp-install' && commandName !== 'mcp-uninstall') return false;
+
+  const targetFlag = (args.target as string) || 'auto';
+  const loc: Location = args.local ? 'local' : 'global';
+
+  try {
+    const result = commandName === 'mcp-install'
+      ? installMcpConfig(loc, targetFlag)
+      : uninstallMcpConfig(loc, targetFlag);
+
+    const summary = result.files.map(f => `${f.agent}: ${f.action} ${f.path}`);
+    for (const note of result.notes) summary.push(`note: ${note}`);
     console.log(output.format({ files: summary }));
     return true;
   } catch (e: any) {

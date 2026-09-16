@@ -1,6 +1,7 @@
 {
   "name": "cssprobe-cli",
-  "version": "0.2.26",
+  "version": "0.3.0",
+  "mcpName": "io.github.mack-peng/cssprobe-cli",
   "description": "Runtime CSS probe — inspect layout, colors, backgrounds, fonts and more in a live browser. AI agents and shell automation.",
   "keywords": [
     "css",

@@ -5,6 +5,7 @@
 ## Documentation
 
 - [README](https://raw.githubusercontent.com/mack-peng/cssprobe-cli/main/README.md): overview, quick start, configuration
+- [MCP server usage](https://raw.githubusercontent.com/mack-peng/cssprobe-cli/main/README.md): `cssprobe-cli mcp-install` — native tools for Claude Code / Cursor / Codex / opencode / Gemini / Hermes (10 tools: open, inspect, tree, layout, findings, eval, screenshot, inject_css, close, status)
 - [Installation guide](https://raw.githubusercontent.com/mack-peng/cssprobe-cli/main/docs/guide/installation.md): agent-friendly install and skill wiring (Claude Code, Cursor, Codex, …)
 - [npm package](https://www.npmjs.com/package/cssprobe-cli): `npm install -g cssprobe-cli`
 
