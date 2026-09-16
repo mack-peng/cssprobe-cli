@@ -243,6 +243,34 @@ const skillUninstall = declareCommand({
   }),
 });
 
+// ── mcp ──
+
+const mcp = declareCommand({
+  name: 'mcp',
+  category: 'core',
+  description: 'Start MCP server (stdio transport) for AI clients',
+});
+
+const mcpInstall = declareCommand({
+  name: 'mcp-install',
+  category: 'core',
+  description: 'Install MCP server config into AI client configs',
+  options: z.object({
+    target: z.string().optional().describe('client target: auto, all, none, claude, cursor, codex, opencode, hermes, gemini (default: auto)'),
+    local: z.boolean().optional().describe('write project-local config instead of global'),
+  }),
+});
+
+const mcpUninstall = declareCommand({
+  name: 'mcp-uninstall',
+  category: 'core',
+  description: 'Remove MCP server config from AI client configs',
+  options: z.object({
+    target: z.string().optional().describe('client target: auto, all, none, claude, cursor, codex, opencode, hermes, gemini (default: auto)'),
+    local: z.boolean().optional().describe('remove project-local config instead of global'),
+  }),
+});
+
 // ── export ──
 
 const commandsArray: AnyCommandSchema[] = [
@@ -258,6 +286,8 @@ const commandsArray: AnyCommandSchema[] = [
   configShow, configSet, configList, configUse, configNew, configPath,
   // skill
   skillInstall, skillUninstall,
+  // mcp
+  mcp, mcpInstall, mcpUninstall,
 ];
 
 export const commands = Object.fromEntries(commandsArray.map(cmd => [cmd.name, cmd]));
