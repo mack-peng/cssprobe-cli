@@ -2,7 +2,9 @@
 
 Runtime CSS probe — inspect layout, scroll, colors, backgrounds, fonts and more in a live browser. Built for both humans and AI agents.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22.5.0-brightgreen.svg)](https://nodejs.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22.5.0-brightgreen.svg)](https://nodejs.org/) [![npm version](https://img.shields.io/npm/v/cssprobe-cli.svg)](https://www.npmjs.com/package/cssprobe-cli) [![npm downloads](https://img.shields.io/npm/dm/cssprobe-cli.svg)](https://www.npmjs.com/package/cssprobe-cli) [![GitHub stars](https://img.shields.io/github/stars/mack-peng/cssprobe-cli?style=social)](https://github.com/mack-peng/cssprobe-cli/stargazers)
+
+> Static + runtime CSS diagnosis for AI agents — pair with [cssgraph](https://github.com/mack-peng/cssgraph) (the CSS knowledge graph) for the full picture.
 
 ---
 
@@ -268,6 +270,12 @@ npm run build       # tsc + esbuild collector + daemon entry + generate help.jso
 npm test            # Run unit tests (58 tests)
 npx tsc --noEmit    # Type check only
 ```
+
+## If cssprobe-cli is useful
+
+A ⭐ star helps other developers discover it — and tells us to keep shipping.
+
+---
 
 ## License
 

@@ -1,0 +1,14 @@
+# cssprobe-cli
+
+> Runtime CSS probe — inspect layout, scroll, colors, backgrounds, fonts in a live browser. Returns DOM tree, ASCII layout diagram and confidence-classified findings for humans and AI agents.
+
+## Documentation
+
+- [README](https://raw.githubusercontent.com/mack-peng/cssprobe-cli/main/README.md): overview, quick start, configuration
+- [Installation guide](https://raw.githubusercontent.com/mack-peng/cssprobe-cli/main/docs/guide/installation.md): agent-friendly install and skill wiring (Claude Code, Cursor, Codex, …)
+- [npm package](https://www.npmjs.com/package/cssprobe-cli): `npm install -g cssprobe-cli`
+
+## Optional
+
+- [GitHub repository](https://github.com/mack-peng/cssprobe-cli): source code, issues, releases
+- [cssgraph](https://github.com/mack-peng/cssgraph): companion static CSS knowledge graph for AI agents
