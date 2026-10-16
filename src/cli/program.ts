@@ -77,7 +77,14 @@ export async function program() {
     case 'eval':
     case 'resize':
     case 'playwright':
+    case 'click':
+    case 'hover':
+    case 'type':
+    case 'wait-for':
       await handleSessionCommand(commandName!, command!, rawArgs, output);
+      return;
+    case 'run':
+      await handleRun(command!, rawArgs, output);
       return;
   }
 
@@ -229,6 +236,19 @@ async function handleStatus(output: Output) {
   }
 }
 
+async function handleRun(
+  command: AnyCommandSchema,
+  args: MinimistArgs,
+  output: Output
+) {
+  const fileArg = args._[1];
+  if (!fileArg) output.error('Usage: cssprobe-cli run <file>');
+  const file = path.resolve(fileArg);
+  if (!fs.existsSync(file)) output.error(`Flow script not found: ${file}`);
+  args._ = ['run', file];
+  await handleSessionCommand('run', command, args, output);
+}
+
 async function handleSessionCommand(
   commandName: string,
   command: AnyCommandSchema,
@@ -253,6 +273,8 @@ async function handleSessionCommand(
     }
 
     console.log(result.text);
+    if (typeof result.exitCode === 'number' && result.exitCode !== 0)
+      process.exit(result.exitCode);
   } catch (e: any) {
     output.error(e instanceof Error ? e.message : String(e));
   }

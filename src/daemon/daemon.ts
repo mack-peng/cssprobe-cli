@@ -13,6 +13,17 @@ import { BrowserLauncher } from '../browser/launcher';
 import { analyze } from '../engine/analyzer';
 import { renderMarkdown, renderJSON } from '../engine/renderer';
 import { renderNode } from '../engine/renderers/dom-tree';
+import {
+  clickElement,
+  hoverElement,
+  typeInto,
+  waitForCondition,
+  describeWaitTarget,
+  resolveWaitTarget,
+  type TargetResult,
+} from '../browser/interactions';
+import { serializeEvalResult } from '../engine/evalSerializer';
+import { runFlow } from './flowRunner';
 
 import type { SessionConfig, ClientInfo } from './session';
 
@@ -86,7 +97,7 @@ export async function startDaemon(
 async function executeCommand(
   launcher: BrowserLauncher,
   args: Record<string, any> & { _: string[] }
-): Promise<{ text: string }> {
+): Promise<{ text: string; exitCode?: number }> {
   const command = args._[0];
   const params = args._.slice(1);
 
@@ -212,10 +223,15 @@ async function executeCommand(
       if (!page)
         throw new Error('Browser is not open. Run: cssprobe-cli open <url>');
 
-      const result = await page.evaluate(expression);
-      if (typeof result === 'string') return { text: result };
-      if (result === undefined) return { text: 'undefined' };
-      return { text: JSON.stringify(result, null, 2) };
+      const handle = await page.evaluateHandle(expression);
+      try {
+        const result = await handle.evaluate(serializeEvalResult);
+        if (typeof result === 'string') return { text: result };
+        if (result === undefined) return { text: 'undefined' };
+        return { text: JSON.stringify(result, null, 2) };
+      } finally {
+        await handle.dispose();
+      }
     }
 
     case 'resize': {
@@ -250,6 +266,86 @@ async function executeCommand(
       return { text: JSON.stringify(result, null, 2) };
     }
 
+    case 'click':
+    case 'hover': {
+      const selector = params[0];
+      if (!selector)
+        throw new Error(`Selector is required for ${command} command`);
+
+      const page = requirePage(launcher);
+      const opts = { nth: args.nth, force: args.force, timeout: args.timeout };
+      const result = command === 'click'
+        ? await clickElement(page, selector, opts)
+        : await hoverElement(page, selector, opts);
+
+      if (args.json) {
+        return { text: JSON.stringify({ ok: true, selector, matches: result.matches, nth: result.nth }, null, 2) };
+      }
+      return { text: formatTargetAction(command === 'click' ? 'Clicked' : 'Hovered', selector, result) };
+    }
+
+    case 'type': {
+      const selector = params[0];
+      const text = params[1];
+      if (!selector || text === undefined)
+        throw new Error('Usage: type <selector> <text>');
+
+      await typeInto(requirePage(launcher), selector, text, {
+        press: args.press,
+        sequential: args.sequential,
+        clear: args.clear,
+        delay: args.delay,
+        nth: args.nth,
+        timeout: args.timeout,
+      });
+
+      if (args.json) {
+        const payload: Record<string, unknown> = { ok: true, selector, length: text.length };
+        if (args.press) payload.pressed = args.press;
+        return { text: JSON.stringify(payload, null, 2) };
+      }
+      const pressedNote = args.press ? ` then pressed ${args.press}` : '';
+      return { text: `Typed ${text.length} chars into ${selector}${pressedNote}` };
+    }
+
+    case 'wait-for': {
+      // selector is read from the parsed object: option flags are appended to
+      // the argv array after positional args, so params[0] is not reliable here.
+      const selector = args.selector as string | undefined;
+      const timeout = (args.timeout as number | undefined) ?? 30000;
+      const target = resolveWaitTarget(selector, {
+        js: args.js,
+        networkIdle: args['network-idle'],
+        state: args.state,
+      });
+
+      let elapsedMs: number;
+      try {
+        elapsedMs = await waitForCondition(requirePage(launcher), target, timeout);
+      } catch (e) {
+        throw new Error(`wait-for failed for ${describeWaitTarget(target)} within ${timeout}ms: ${(e as Error).message}`);
+      }
+
+      if (args.json) {
+        const payload: Record<string, unknown> = {
+          ok: true,
+          waitedFor: target.kind === 'networkIdle' ? 'networkidle' : target.kind,
+          elapsedMs,
+        };
+        if (target.kind === 'selector') payload.state = target.state;
+        return { text: JSON.stringify(payload, null, 2) };
+      }
+      const label = target.kind === 'selector' ? `${selector} (${target.state})` : describeWaitTarget(target);
+      return { text: `Wait satisfied: ${label} (${elapsedMs}ms)` };
+    }
+
+    case 'run': {
+      const absPath = params[0];
+      if (!absPath)
+        throw new Error('Flow script path is required');
+      return await runFlow(launcher, absPath, { timeout: args.timeout, json: !!args.json });
+    }
+
     case 'state-save': {
       const context = launcher.getContext();
       if (!context)
@@ -261,6 +357,21 @@ async function executeCommand(
     default:
       throw new Error(`Unknown command: ${command}`);
   }
+}
+
+function requirePage(launcher: BrowserLauncher) {
+  const page = launcher.getPage();
+  if (!page) throw new Error('Browser is not open. Run: cssprobe-cli open <url>');
+  return page;
+}
+
+function formatTargetAction(verb: string, selector: string, result: TargetResult): string {
+  const descriptor = result.descriptor
+    ? ` → ${result.descriptor.tag}${result.descriptor.classes.map(c => `.${c}`).join('')}${result.descriptor.text ? ` "${result.descriptor.text}"` : ''}`
+    : '';
+  const matchNote = result.matches === 1 ? '1 match' : `${result.matches} matches`;
+  const nthNote = result.matches > 1 ? `, used #${result.nth}` : '';
+  return `${verb} ${selector}${descriptor} (${matchNote}${nthNote})`;
 }
 
 async function socketExists(socketPath: string): Promise<boolean> {

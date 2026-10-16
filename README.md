@@ -182,9 +182,23 @@ Exposes 10 tools: `cssprobe_open`, `cssprobe_inspect`, `cssprobe_tree`, `cssprob
 | Command | Description |
 |---------|-------------|
 | `resize <width> <height>` | Resize browser viewport |
-| `eval <expression>` | Evaluate JavaScript (browser context) |
+| `eval <expression>` | Evaluate JavaScript (browser context); DOM nodes are auto-serialized |
 | `playwright <call>` | Execute Playwright API (Node.js context) |
 | `screenshot` | Take screenshot (saves to ~/.cssprobe-cli/screenshots/, --out to override) |
+
+### Interaction
+
+| Command | Description |
+|---------|-------------|
+| `click <selector>` | Real mouse click (auto-scroll + actionability wait; works with custom React components) |
+| `hover <selector>` | Real mouse hover |
+| `type <selector> <text>` | Fill text (replaces value); `--press Enter` to submit; `--sequential` for real key events |
+| `wait-for <selector>` | Wait for selector state (`--state visible\|hidden\|attached\|detached`, `--timeout ms`) |
+| `wait-for --js "<predicate>"` | Wait until a JS predicate is truthy |
+| `wait-for --network-idle` | Wait until the page is network-idle |
+| `run <file>` | Run a multi-step flow script |
+
+`click` / `hover` support `--nth N` (1-based, default first match), `--force` (skip actionability checks) and `--timeout ms`. Without `--nth`, multiple matches fail (strict) to prevent wrong-target clicks.
 
 ### State
 
@@ -203,6 +217,51 @@ Exposes 10 tools: `cssprobe_open`, `cssprobe_inspect`, `cssprobe_tree`, `cssprob
 | `config-use <name>` | Switch active profile |
 | `config-new <name>` | Create new profile |
 | `config-path` | Show config file path |
+
+---
+
+## Multi-step Flows
+
+The interaction commands drive a page step by step; `run` turns a sequence into a versionable script:
+
+```bash
+cssprobe-cli open https://example.com/editor
+cssprobe-cli wait-for .editor-canvas
+cssprobe-cli click ".layout-switch" --nth 1
+cssprobe-cli type ".block-title input" "Hello" --press Enter
+cssprobe-cli inspect .block-grid --json
+cssprobe-cli close
+```
+
+For repeatable flows, write a script and run it with one command. The script runs inside the daemon session (full Playwright `page` access):
+
+```js
+// flow.js
+export default async ({ page, click, waitFor, type, inspect, screenshot, log }) => {
+  await page.goto('https://example.com/editor', { waitUntil: 'domcontentloaded' });
+  await waitFor('.editor-canvas', { state: 'visible', timeout: 10000 });
+
+  await click('.layout-switch', { nth: 1 });
+  await waitFor({ js: "() => document.body.dataset.layout === 'two-col'" });
+
+  await type('.block-title input', 'Hello', { press: 'Enter', sequential: true, clear: true });
+  await waitFor({ networkIdle: true });
+
+  const { findings } = await inspect('.block-grid', { format: 'json' });
+  log('findings:', findings.length);
+  await screenshot({ path: './after-layout-switch.png' });
+
+  return { findings: findings.length };
+};
+```
+
+```bash
+cssprobe-cli run ./flow.js        # --timeout ms for the whole script (default 300000, 0 = unlimited)
+```
+
+Scripts must `default-export` an async function receiving the API object: `page`, `click`, `hover`, `type`, `waitFor`, `inspect`, `screenshot`, `log`. `screenshot` relative paths resolve against the script's directory; logs (`log()` and `console.*`) are collected and returned with the result. On failure the command exits `1`, prints the collected logs, and keeps the session alive.
+
+> Scripts are executed by the local daemon with full Node privileges — only run trusted scripts.
 
 ---
 

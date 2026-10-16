@@ -4,7 +4,7 @@
 
 `cssprobe-cli` — Runtime CSS probe for layout/scroll/overflow/color/font inspection with session-based browser management. Entrypoint: `bin/cssprobe-cli.js` → `require('../dist/index')`.
 Build: `npm run build` (= `tsc` + `esbuild` collector IIFE bundle + `esbuild` daemon entry + `tsx scripts/generate-help.ts`).
-Test: `npm test` (= `tsx --test tests/*.test.ts` — Node.js built-in test runner, 58 tests).
+Test: `npm test` (= `tsx --test tests/*.test.ts` — Node.js built-in test runner, 108 tests).
 Dependencies: `playwright-core`, `zod`. Dev: `typescript`, `@types/node`, `tsx`, `esbuild`.
 
 ## Architecture
@@ -21,19 +21,23 @@ src/
 ├── daemon/
 │   ├── session.ts             # Session management (single session, Unix socket)
 │   ├── daemon.ts              # Daemon process: browser lifecycle + command execution
+│   ├── flowRunner.ts          # Flow script loader/runner (run command): dynamic import, API injection, console capture
 │   └── daemonEntry.ts         # Daemon entry point (spawned as child process)
 ├── engine/
 │   ├── types.ts               # Shared types: Snapshot, TreeNode, Finding, Confidence
 │   ├── collector.ts           # Browser-side: DOM traversal, computed styles, declared values
 │   ├── analyzer.ts            # Node-side: pure functions, confidence model, pattern detection
+│   ├── evalSerializer.ts      # Self-contained serializer for eval results (runs in-page via JSHandle.evaluate)
 │   └── renderer.ts            # Markdown / JSON rendering
 ├── browser/
-│   └── launcher.ts            # Playwright wrapper: launch, navigate, inject collector
+│   ├── launcher.ts            # Playwright wrapper: launch, navigate, inject collector
+│   └── interactions.ts        # Interaction primitives: click/hover/type/wait-for (shared by daemon + run API)
 ├── config/
 │   ├── config.ts              # Config loader (CLI → env → ~/.cssprobe-clirc profiles)
 │   └── helpGenerator.ts       # Build-time: Zod schemas → dist/help.json
 └── utils/
-    └── socketConnection.ts    # Socket communication (adapted from playwright-cli)
+    ├── socketConnection.ts    # Socket communication (adapted from playwright-cli)
+    └── screenshot.ts          # Screenshot data-URL → file saving (shared by CLI + flow runner)
 ```
 
 ## Key Patterns
@@ -73,10 +77,31 @@ src/
 - `resize <width> <height>` — Resize browser viewport
 - `eval <expression>` — Evaluate JavaScript (browser context)
   - Returns raw string values (not JSON-quoted) for string results
+  - DOM nodes / circular structures are auto-serialized (descriptors, `[Circular]`, `[Function: name]`, depth cap 6)
 - `playwright <call>` — Execute Playwright API call (Node.js context)
   - Returns `{ ok: true, value: null, note: ... }` when the call returns no value; throws a clear error message on failure
 - `screenshot` — Take a screenshot
   - `--out <path>` — Output file path (default: `~/.cssprobe-cli/screenshots/<timestamp>.png`)
+
+### Interaction
+- `click <selector>` — Real mouse click (auto-scroll + actionability wait, works with custom React components)
+  - `--nth <n>` — 1-based match index (default: first match; multiple matches without `--nth` fail — strict)
+  - `--force` — skip actionability checks
+  - `--timeout <ms>` — action timeout (default 30000)
+- `hover <selector>` — Real mouse hover (`--nth` / `--force` / `--timeout` as above)
+- `type <selector> <text>` — Type text
+  - Default: `fill()` (replaces the value); `--sequential` for real key events (custom editors), `--clear` clears first
+  - `--press <key>` — press a key after typing (e.g. `Enter`)
+  - `--delay <ms>` — keystroke delay for `--sequential`
+- `wait-for` — Wait for a condition (three mutually exclusive modes)
+  - `wait-for <selector>` — selector state: `--state visible|hidden|attached|detached` (default visible)
+  - `wait-for --js "<predicate>"` — wait until a JS predicate is truthy
+  - `wait-for --network-idle` — wait until the page is network-idle
+  - `--timeout <ms>` — default 30000; timeout errors name the target
+- `run <file>` — Run a multi-step flow script inside the daemon
+  - Script default-exports an async function receiving the API object: `page`, `click`, `hover`, `type`, `waitFor`, `inspect`, `screenshot`, `log` (CJS also supported)
+  - `--timeout <ms>` — whole-script guard (default 300000, 0 = unlimited); failure exits 1 and keeps the session alive
+  - `screenshot` relative paths resolve against the script's directory; logs collected and returned
 
 ### State
 - `state-import [file]` — Import cookies from Netscape format
@@ -151,6 +176,6 @@ cssprobe-cli close
 | Output | Single markdown string | Markdown (default) / JSON (--json) |
 | Config | `window.__DOM_REPORT_CFG` global + eval two-step | CLI flags → env → rc file, one command |
 | ROOT_SELECTOR | Manual or eval probe | `--auto-root` auto-detection |
-| Tests | None | 45 unit tests (command, analyzer, output, renderer) |
+| Tests | None | 45+ unit tests (command, analyzer, output, renderer) |
 | Build | Regex stripping CJS module.exports | esbuild IIFE + CJS bundle, clean build |
 | Session | None (blocking commands) | Session-based daemon architecture |
