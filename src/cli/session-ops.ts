@@ -1,9 +1,8 @@
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
 import { Session, loadSession, listAllSessions } from '../daemon/session';
 import type { SessionConfig } from '../daemon/session';
 import type { AnyCommandSchema } from './command';
+
+export { saveScreenshotFile } from '../utils/screenshot';
 
 export interface OpenOptions {
   url?: string;
@@ -135,7 +134,7 @@ export async function runSessionCommand(
   command: AnyCommandSchema,
   parsed: Record<string, unknown>,
   json = false
-): Promise<{ text: string }> {
+): Promise<{ text: string; exitCode?: number }> {
   const session = await loadSession();
   if (!session)
     throw new Error('No active session. Run: cssprobe-cli open <url>');
@@ -145,21 +144,4 @@ export async function runSessionCommand(
   if (json) runArgs.json = true;
 
   return await session.run(runArgs);
-}
-
-export function saveScreenshotFile(dataUrl: string, out?: string): string {
-  const base64 = dataUrl.replace(/^data:image\/png;base64,/, '');
-  const buffer = Buffer.from(base64, 'base64');
-  const resolvedOut = out
-    ? path.resolve(out)
-    : (() => {
-        const dir = path.join(os.homedir(), '.cssprobe-cli', 'screenshots');
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        const ts = new Date().toISOString().replace(/[:.]/g, '-');
-        return path.join(dir, `screenshot-${ts}.png`);
-      })();
-  const dir = path.dirname(resolvedOut);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(resolvedOut, buffer);
-  return resolvedOut;
 }

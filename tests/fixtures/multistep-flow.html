@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>cssprobe-cli multistep flow fixture</title>
+  <style>
+    body { font-family: sans-serif; padding: 24px; }
+    #tappable { display: inline-block; padding: 8px 16px; background: #eee; cursor: pointer; }
+    #hover-zone { display: inline-block; padding: 8px 16px; background: #ddd; }
+    #tooltip { display: none; margin-top: 4px; color: green; }
+    #hover-zone:hover + #tooltip { display: block; }
+    #late { margin-top: 8px; color: blue; }
+    .panel { margin-top: 12px; padding: 8px; border: 1px solid #ccc; }
+  </style>
+</head>
+<body>
+  <h1 id="fixture-title">Multistep Flow Fixture</h1>
+
+  <div id="tappable" class="tappable-btn primary">Toggle layout</div>
+  <div class="panel">layout: <span id="layout-state">one-col</span></div>
+
+  <div id="hover-zone" class="hover-target">Hover me</div>
+  <div id="tooltip">tooltip visible</div>
+
+  <div class="panel">
+    <input id="typed" type="text" placeholder="type here">
+    <span>keydowns: <span id="key-count">0</span></span>
+  </div>
+
+  <form id="search-form" class="panel">
+    <input id="search-box" name="q" placeholder="press enter">
+  </form>
+  <div id="submitted"></div>
+
+  <div id="late"></div>
+
+  <div class="panel">
+    <button id="plain-btn">plain button</button>
+    <span>clicks: <span id="plain-clicks">0</span></span>
+  </div>
+
+  <script>
+    // Mimics a custom component that only reacts to a real mousedown/mouseup
+    // sequence (programmatic el.click() leaves it unresponsive).
+    (function () {
+      var down = false;
+      var el = document.getElementById('tappable');
+      var state = document.getElementById('layout-state');
+      el.addEventListener('mousedown', function () { down = true; });
+      el.addEventListener('mouseup', function () {
+        if (!down) return;
+        down = false;
+        state.textContent = state.textContent === 'one-col' ? 'two-col' : 'one-col';
+      });
+    })();
+
+    // Real keydown counter: fill() leaves this at 0, pressSequentially moves it.
+    document.getElementById('typed').addEventListener('keydown', function () {
+      var kc = document.getElementById('key-count');
+      kc.textContent = String(Number(kc.textContent) + 1);
+    });
+
+    document.getElementById('search-form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      document.getElementById('submitted').textContent = 'submitted:' + document.getElementById('search-box').value;
+    });
+
+    document.getElementById('plain-btn').addEventListener('click', function () {
+      var pc = document.getElementById('plain-clicks');
+      pc.textContent = String(Number(pc.textContent) + 1);
+    });
+
+    setTimeout(function () {
+      var el = document.createElement('div');
+      el.id = 'late';
+      el.textContent = 'appeared';
+      document.body.appendChild(el);
+    }, 800);
+  </script>
+</body>
+</html>

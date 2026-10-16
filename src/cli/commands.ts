@@ -140,6 +140,81 @@ const playwrightCmd = declareCommand({
   }),
 });
 
+// ── interaction ──
+
+const click = declareCommand({
+  name: 'click',
+  category: 'core',
+  description: 'Click an element with real mouse events (works with custom React components)',
+  args: z.object({
+    selector: z.string().describe('CSS selector'),
+  }),
+  options: z.object({
+    nth: numberArg.optional().describe('1-based match index (default: first match)'),
+    force: z.boolean().optional().describe('skip actionability checks'),
+    timeout: numberArg.optional().describe('action timeout in ms (default 30000)'),
+  }),
+});
+
+const hover = declareCommand({
+  name: 'hover',
+  category: 'core',
+  description: 'Hover an element with real mouse events',
+  args: z.object({
+    selector: z.string().describe('CSS selector'),
+  }),
+  options: z.object({
+    nth: numberArg.optional().describe('1-based match index (default: first match)'),
+    force: z.boolean().optional().describe('skip actionability checks'),
+    timeout: numberArg.optional().describe('action timeout in ms (default 30000)'),
+  }),
+});
+
+const typeCmd = declareCommand({
+  name: 'type',
+  category: 'core',
+  description: 'Type text into an element (fill by default; --sequential for real key events)',
+  args: z.object({
+    selector: z.string().describe('CSS selector'),
+    text: z.string().describe('text to type'),
+  }),
+  options: z.object({
+    press: z.string().optional().describe('key to press after typing (e.g. Enter, Tab, Control+A)'),
+    sequential: z.boolean().optional().describe('type with real key events (for custom editors)'),
+    clear: z.boolean().optional().describe('clear existing content before sequential typing'),
+    delay: numberArg.optional().describe('delay between keystrokes in ms (--sequential, default 0)'),
+    nth: numberArg.optional().describe('1-based match index (default: first match)'),
+    timeout: numberArg.optional().describe('action timeout in ms (default 30000)'),
+  }),
+});
+
+const waitForCmd = declareCommand({
+  name: 'wait-for',
+  category: 'core',
+  description: 'Wait for a condition: selector state, JS predicate, or network idle',
+  args: z.object({
+    selector: z.string().optional().describe('CSS selector to wait for'),
+  }),
+  options: z.object({
+    state: z.enum(['visible', 'hidden', 'attached', 'detached']).optional().describe('selector state to wait for (default visible)'),
+    js: z.string().optional().describe('JS predicate, e.g. "() => document.querySelector(\'.x\')?.offsetHeight > 100"'),
+    'network-idle': z.boolean().optional().describe('wait until the page is network-idle'),
+    timeout: numberArg.optional().describe('timeout in ms (default 30000)'),
+  }),
+});
+
+const runCmd = declareCommand({
+  name: 'run',
+  category: 'core',
+  description: 'Run a multi-step flow script (default-exports an async function receiving the API object)',
+  args: z.object({
+    file: z.string().describe('flow script path (.js / .mjs / .cjs)'),
+  }),
+  options: z.object({
+    timeout: numberArg.optional().describe('whole-script timeout in ms (default 300000, 0 = unlimited)'),
+  }),
+});
+
 // ── state management ──
 
 const stateImport = declareCommand({
@@ -280,6 +355,8 @@ const commandsArray: AnyCommandSchema[] = [
   inspect, tree, layout, findings, injectCss,
   // browser
   resize, evalCmd, playwrightCmd, screenshot,
+  // interaction
+  click, hover, typeCmd, waitForCmd, runCmd,
   // state
   stateImport, stateSave,
   // config
