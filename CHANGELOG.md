@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.4.0] - 2026-10-23
 
 ### Added
 - `frames` command and `--frame <index|name|url-substring>` on `eval` / `inspect` / `tree` / `layout` / `findings` / `inject-css`
