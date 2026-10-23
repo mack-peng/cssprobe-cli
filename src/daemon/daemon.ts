@@ -368,8 +368,17 @@ async function executeCommand(
       if (interval <= 0) throw new Error('--interval must be greater than 0');
 
       const frame = resolveFrame(requirePage(launcher), args.frame);
-      const points = await sampleFrame(frame, expression, { intervalMs: interval, durationMs: duration });
-      const summary = summarizeSamples(points, args.key as string | undefined);
+      const points = await sampleFrame(frame, expression, {
+        intervalMs: interval,
+        durationMs: duration,
+        ignoreErrors: !!args['ignore-errors'],
+      });
+      const summary = summarizeSamples(
+        points,
+        args.key as string | undefined,
+        5000,
+        args['tail-from'] as number | undefined
+      );
       return { text: JSON.stringify({ expression, intervalMs: interval, summary, series: points }, null, 2) };
     }
 

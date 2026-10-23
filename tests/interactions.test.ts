@@ -1,8 +1,25 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { resolveWaitTarget } from '../src/browser/interactions';
+import { resolveWaitTarget, normalizePredicateExpression } from '../src/browser/interactions';
 
 describe('interactions', () => {
+  describe('normalizePredicateExpression', () => {
+    it('calls arrow-function predicates', () => {
+      assert.strictEqual(normalizePredicateExpression('() => ready'), '(() => ready)()');
+      assert.strictEqual(normalizePredicateExpression('state => state.ok'), '(state => state.ok)()');
+      assert.strictEqual(normalizePredicateExpression('async () => true'), '(async () => true)()');
+    });
+
+    it('calls function declarations', () => {
+      assert.strictEqual(normalizePredicateExpression('function () { return true; }'), '(function () { return true; })()');
+    });
+
+    it('leaves bare expressions untouched', () => {
+      assert.strictEqual(normalizePredicateExpression("document.readyState === 'complete'"), "document.readyState === 'complete'");
+      assert.strictEqual(normalizePredicateExpression('window.ready'), 'window.ready');
+    });
+  });
+
   describe('resolveWaitTarget', () => {
     it('resolves a selector with default state visible', () => {
       assert.deepStrictEqual(resolveWaitTarget('.x', {}), {

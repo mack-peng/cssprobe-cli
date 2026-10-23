@@ -275,6 +275,46 @@ Scripts must `default-export` an async function receiving the API object: `page`
 
 ---
 
+## Scenario Suites (Regression)
+
+Run repeatable regression cases from a JSON suite: each case opens a fresh browser, executes steps, asserts on saved values, and writes artifacts + an optional JUnit report.
+
+```bash
+cssprobe-cli scenario run suites/ticket-26571394.json \
+  --state ~/.cssprobe-cli/states/preprod.json \
+  --artifacts out/ticket-26571394 \
+  --junit out/junit.xml
+```
+
+```json
+{
+  "name": "ticket 26571394 preprod",
+  "defaults": { "viewport": { "width": 1280, "height": 800 } },
+  "cases": [
+    {
+      "name": "refresh keeps the hash section aligned",
+      "url": "https://example.com/#listen-to-tcmi",
+      "steps": [
+        { "do": "sample", "expression": "({ hash: location.hash, top: Math.round(document.querySelector('#listen-to-tcmi')?.getBoundingClientRect().top ?? -1) })", "interval": 250, "duration": 12000, "key": "top", "tailFrom": 9500, "save": "timeline" },
+        { "do": "assert", "label": "hash retained", "on": "timeline", "path": "summary.last.value.hash", "eq": "#listen-to-tcmi" },
+        { "do": "assert", "label": "anchor stable", "on": "timeline", "path": "summary.tail.min", "min": 70 },
+        { "do": "assert", "label": "anchor stable", "on": "timeline", "path": "summary.tail.max", "max": 90 }
+      ]
+    },
+    {
+      "name": "deployment fingerprint",
+      "url": "https://example.com/",
+      "steps": [
+        { "do": "waitFor", "js": "() => !!window.DEBUG?.NavigatorStore", "timeout": 20000 },
+        { "do": "assert", "globals": { "DEBUG.NavigatorStore.setHashRestoreProtected": "function" }, "absent": ["DEBUG.NavigatorStore.navigateToSectionId"] }
+      ]
+    }
+  ]
+}
+```
+
+Steps: `goto`, `reload`, `eval`, `sample`, `waitStable`, `click`, `waitFor`, `screenshot`, `assert`. `sample` and `eval` save values with `save: "<name>"`; assertions read them with `on: "<name>"` + `path`, or check live `state` (`url`, `title`, `frames`), `url`, `globals`, `absent`. `sample` supports `key`, `tailFrom`, `ignoreErrors`; every run writes `summary.json`, per-case `case.json`, sample series and failure screenshots.
+
 ## Confidence Model
 
 Every finding carries a confidence level:

@@ -52,6 +52,25 @@ const framesCmd = declareCommand({
   description: 'List frames in the current page',
 });
 
+const scenarioCmd = declareCommand({
+  name: 'scenario',
+  category: 'core',
+  description: 'Run a JSON scenario suite (regression cases, artifacts, JUnit)',
+  args: z.object({
+    action: z.literal('run').describe('only "run" is supported'),
+    file: z.string().describe('scenario suite JSON path'),
+  }),
+  options: z.object({
+    state: z.string().optional().describe('fallback state file when the suite/case does not set one'),
+    artifacts: z.string().optional().describe('artifact directory (default: ~/.cssprobe-cli/scenario-runs/<suite>-<timestamp>)'),
+    junit: z.string().optional().describe('write a JUnit XML report to this path'),
+    bail: z.boolean().optional().describe('stop after the first failing case'),
+    headed: z.boolean().optional().describe('show the browser window'),
+    browser: z.enum(['chromium', 'firefox', 'webkit']).optional().describe('browser engine (default chromium)'),
+    viewport: z.string().optional().describe('viewport size as WxH (default: suite defaults or 1280x720)'),
+  }),
+});
+
 const doctor = declareCommand({
   name: 'doctor',
   category: 'core',
@@ -245,6 +264,8 @@ const sampleCmd = declareCommand({
     interval: numberArg.optional().describe('sampling interval in ms (default 250)'),
     duration: numberArg.optional().describe('total sampling duration in ms (default 5000)'),
     key: z.string().optional().describe('dot path for numeric extraction, e.g. "top" or "box.y"'),
+    'tail-from': numberArg.optional().describe('tail starts at this elapsed ms (default: last 5000ms)'),
+    'ignore-errors': z.boolean().optional().describe('record evaluation errors as sample points instead of aborting'),
     frame: z.string().optional().describe('target frame: index, name, or URL substring (default: main frame)'),
   }),
 });
@@ -422,7 +443,7 @@ const mcpUninstall = declareCommand({
 
 const commandsArray: AnyCommandSchema[] = [
   // session management
-  open, close, status, framesCmd, doctor,
+  open, close, status, framesCmd, doctor, scenarioCmd,
   // cssprobe
   inspect, tree, layout, findings, injectCss,
   // browser

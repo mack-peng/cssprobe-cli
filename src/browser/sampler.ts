@@ -4,6 +4,7 @@ export interface SamplePoint {
   t: number;
   value: unknown;
   visibility: string;
+  error?: string;
 }
 
 export interface SampleSummary {
@@ -16,6 +17,7 @@ export interface SampleSummary {
   numeric: Array<[number, number]>;
   changes: number;
   hiddenMs: number;
+  tail: { fromT: number; min: number | null; max: number | null; windowMs: number };
 }
 
 export function extractNumber(value: unknown, key?: string): number | null {
@@ -30,12 +32,23 @@ export function extractNumber(value: unknown, key?: string): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
-export function summarizeSamples(points: SamplePoint[], key?: string): SampleSummary {
+export function summarizeSamples(
+  points: SamplePoint[],
+  key?: string,
+  tailWindowMs: number = 5000,
+  tailFromMs?: number
+): SampleSummary {
   const numeric: Array<[number, number]> = [];
   for (const point of points) {
     const n = extractNumber(point.value, key);
     if (n !== null) numeric.push([point.t, n]);
   }
+
+  const tailFrom = Math.max(
+    0,
+    tailFromMs ?? (points.length ? points[points.length - 1].t - tailWindowMs : 0)
+  );
+  const tailNumeric = numeric.filter(([t]) => t >= tailFrom).map(([, value]) => value);
 
   let changes = 0;
   let hiddenMs = 0;
@@ -56,6 +69,12 @@ export function summarizeSamples(points: SamplePoint[], key?: string): SampleSum
     numeric,
     changes,
     hiddenMs,
+    tail: {
+      fromT: tailFrom,
+      min: tailNumeric.length ? Math.min(...tailNumeric) : null,
+      max: tailNumeric.length ? Math.max(...tailNumeric) : null,
+      windowMs: tailWindowMs,
+    },
   };
 }
 
@@ -78,7 +97,7 @@ async function readValue(frame: Frame, expression: string): Promise<{ value: unk
 export async function sampleFrame(
   frame: Frame,
   expression: string,
-  opts: { intervalMs: number; durationMs: number }
+  opts: { intervalMs: number; durationMs: number; ignoreErrors?: boolean }
 ): Promise<SamplePoint[]> {
   const intervalMs = Math.max(1, Math.floor(opts.intervalMs));
   const started = Date.now();
@@ -86,8 +105,13 @@ export async function sampleFrame(
 
   while (Date.now() - started < opts.durationMs) {
     const t = Date.now() - started;
-    const { value, visibility } = await readValue(frame, expression);
-    points.push({ t, value, visibility });
+    try {
+      const { value, visibility } = await readValue(frame, expression);
+      points.push({ t, value, visibility });
+    } catch (error) {
+      if (!opts.ignoreErrors) throw error;
+      points.push({ t, value: null, visibility: 'unknown', error: (error as Error).message });
+    }
     await sleep(intervalMs);
   }
 

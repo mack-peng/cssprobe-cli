@@ -124,6 +124,14 @@ export function resolveWaitTarget(
   return { kind: 'networkIdle' };
 }
 
+const FUNCTION_LIKE_PREDICATE = /^\s*(async\s+)?(function\b|\([^)]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)/;
+
+export function normalizePredicateExpression(expression: string): string {
+  const trimmed = expression.trim();
+  if (!FUNCTION_LIKE_PREDICATE.test(trimmed)) return trimmed;
+  return `(${trimmed})()`;
+}
+
 export async function waitForCondition(
   page: Page,
   target: WaitTarget,
@@ -135,7 +143,7 @@ export async function waitForCondition(
       await page.waitForSelector(target.selector, { state: target.state, timeout });
       break;
     case 'js':
-      await page.waitForFunction(target.expression, null, { timeout });
+      await page.waitForFunction(normalizePredicateExpression(target.expression), null, { timeout });
       break;
     case 'networkIdle':
       await page.waitForLoadState('networkidle', { timeout });

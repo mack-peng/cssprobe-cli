@@ -4,7 +4,7 @@
 
 `cssprobe-cli` — Runtime CSS probe for layout/scroll/overflow/color/font inspection with session-based browser management. Entrypoint: `bin/cssprobe-cli.js` → `require('../dist/index')`.
 Build: `npm run build` (= `tsc` + `esbuild` collector IIFE bundle + `esbuild` daemon entry + `tsx scripts/generate-help.ts`).
-Test: `npm test` (= `tsx --test tests/*.test.ts` — Node.js built-in test runner, 149 tests).
+Test: `npm test` (= `tsx --test tests/*.test.ts` — Node.js built-in test runner, 170 tests).
 Dependencies: `playwright-core`, `zod`. Dev: `typescript`, `@types/node`, `tsx`, `esbuild`.
 
 ## Architecture
@@ -38,6 +38,11 @@ src/
 │   ├── frames.ts              # Frame listing + resolution (index/name/URL substring)
 │   ├── sampler.ts             # Timeline sampling + wait-stable (pure aggregation)
 │   └── interactions.ts        # Interaction primitives: click/hover/type/wait-for (shared by daemon + run API)
+├── scenario/
+│   ├── schema.ts              # Zod schemas for JSON suites, cases and steps
+│   ├── runner.ts              # Suite execution: browser per case, vars, artifacts, JUnit
+│   ├── assertions.ts          # Pure assertion evaluation (paths, matchers, globals, URL)
+│   └── reporters.ts           # Console summary + JUnit XML
 ├── config/
 │   ├── config.ts              # Config loader (CLI → env → ~/.cssprobe-clirc profiles)
 │   └── helpGenerator.ts       # Build-time: Zod schemas → dist/help.json
@@ -106,11 +111,17 @@ src/
   - `--delay <ms>` — keystroke delay for `--sequential`
 - `sample "<expr>"` — Sample an expression on an interval (`--interval`, `--duration`, `--key`, `--frame`), returning `summary` + `series`
 - `wait-stable "<expr>"` — Wait until the expression stops changing (`--tolerance`, `--window`, `--timeout`, `--interval`, `--frame`)
-- `wait-for` — Wait for a condition (three mutually exclusive modes)
+- `wait-for` — Wait for a condition (three mutually exclusive modes); arrow-function/function predicates are invoked, bare expressions are evaluated as-is
   - `wait-for <selector>` — selector state: `--state visible|hidden|attached|detached` (default visible)
   - `wait-for --js "<predicate>"` — wait until a JS predicate is truthy
   - `wait-for --network-idle` — wait until the page is network-idle
   - `--timeout <ms>` — default 30000; timeout errors name the target
+- `scenario run <file>` — Run a JSON scenario suite (fresh browser per case, assertions, artifacts, JUnit)
+  - `--state <file>` — Fallback state file for cases without one
+  - `--artifacts <dir>` — Artifact directory (default `~/.cssprobe-cli/scenario-runs/<suite>-<timestamp>`)
+  - `--junit <file>` — Write a JUnit XML report
+  - `--bail` — Stop after the first failing case
+  - Steps: `goto`, `reload`, `eval`, `sample`, `waitStable`, `click`, `waitFor`, `screenshot`, `assert`
 - `run <file>` — Run a multi-step flow script inside the daemon
   - Script default-exports an async function receiving the API object: `page`, `context`, `frames()`, `newPage()`, `click`, `hover`, `type`, `waitFor`, `inspect`, `screenshot`, `expect`, `log` (CJS also supported)
   - Uncaught page errors are collected in the envelope as `pageErrors[]`

@@ -11,6 +11,9 @@ import { loadSession } from '../daemon/session';
 import { openSession, closeSession, getSessionStatus, getPageInfo, runSessionCommand, saveScreenshotFile } from './session-ops';
 import { analyzeState } from './state-check';
 import { diagnoseBrowser } from '../browser/launcher';
+import { suiteSchema } from '../scenario/schema';
+import { runScenario } from '../scenario/runner';
+import { formatConsole } from '../scenario/reporters';
 import { runMcpServer } from '../mcp';
 import type { Output } from './output';
 import type { MinimistArgs } from './minimist';
@@ -64,6 +67,9 @@ export async function program() {
       return;
     case 'doctor':
       handleDoctor(command!, rawArgs, output);
+      return;
+    case 'scenario':
+      await handleScenario(command!, rawArgs, output);
       return;
     case 'status':
       await handleStatus(output);
@@ -221,6 +227,62 @@ async function handleClose(command: AnyCommandSchema, args: MinimistArgs, output
     } else {
       console.log('Browser closed.');
     }
+  } catch (e: any) {
+    output.error(e instanceof Error ? e.message : String(e));
+  }
+}
+
+async function handleScenario(
+  command: AnyCommandSchema,
+  args: MinimistArgs,
+  output: Output
+) {
+  try {
+    const cmdArgs = splitArgs(args);
+    const parsed = parseCommand(command, cmdArgs as Record<string, string> & { _: string[] });
+    const file = path.resolve(parsed.file as string);
+    if (!fs.existsSync(file)) output.error(`Scenario suite not found: ${file}`);
+
+    const raw = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    const validation = suiteSchema.safeParse(raw);
+    if (!validation.success) {
+      const issues = validation.error.issues
+        .map(issue => `${issue.path.join('.') || '(root)'}: ${issue.message}`)
+        .join('\n');
+      output.error(`Invalid scenario suite:\n${issues}`);
+    }
+
+    let viewport: { width: number; height: number } | undefined;
+    const viewportStr = parsed.viewport as string | undefined;
+    if (viewportStr) {
+      const parts = viewportStr.split('x');
+      const width = parseInt(parts[0], 10);
+      const height = parseInt(parts[1], 10);
+      if (parts.length !== 2 || isNaN(width) || isNaN(height)) {
+        output.error('Invalid viewport format. Use WxH (e.g. 1280x720)');
+      }
+      viewport = { width, height };
+    }
+
+    const result = await runScenario(validation.data, file, {
+      artifactsDir: parsed.artifacts as string | undefined,
+      junitPath: parsed.junit as string | undefined,
+      bail: !!parsed.bail,
+      headed: !!parsed.headed,
+      browser: parsed.browser as string | undefined,
+      viewport,
+      state: parsed.state as string | undefined,
+    });
+
+    if (output.json) {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      console.log(formatConsole(result.suite, result.results));
+      console.log(`Artifacts: ${result.artifactsDir}`);
+      if (parsed.junit) console.log(`JUnit: ${path.resolve(parsed.junit as string)}`);
+    }
+
+    if (!result.ok) process.exit(1);
   } catch (e: any) {
     output.error(e instanceof Error ? e.message : String(e));
   }
