@@ -1,6 +1,6 @@
 # cssprobe-cli
 
-> Runtime CSS probe — inspect layout, scroll, colors, backgrounds, fonts in a live browser. Returns DOM tree, ASCII layout diagram and confidence-classified findings for humans and AI agents. Interaction commands (click / hover / type / wait-for) drive the page; `run <file>` executes scripted multi-step flows.
+> Runtime CSS probe — inspect layout, scroll, colors, backgrounds, fonts in a live browser. Returns DOM tree, ASCII layout diagram and confidence-classified findings for humans and AI agents. Interaction commands (click / hover / type / wait-for) drive the page; `sample` / `wait-stable` capture timeline regressions; `frames` targets iframes; `doctor` diagnoses browser installs; `run <file>` executes scripted multi-step flows with assertions and page-error capture.
 
 ## Documentation
 

@@ -29,10 +29,12 @@ export function serializeEvalResult(value: unknown): unknown {
     if (depth >= 6) return '[Depth limit]';
     seen.add(v);
 
-    if (Array.isArray(v)) return v.map(item => walk(item, depth + 1));
+    if (Array.isArray(v))
+      return Array.from(v, item => (item === undefined ? null : walk(item, depth + 1)));
 
     const out: Record<string, unknown> = {};
-    for (const [key, val] of Object.entries(v)) out[key] = walk(val, depth + 1);
+    for (const [key, val] of Object.entries(v))
+      out[key] = val === undefined ? null : walk(val, depth + 1);
     return out;
   };
 

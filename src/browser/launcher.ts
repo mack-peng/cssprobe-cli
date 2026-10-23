@@ -4,7 +4,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { chromium, firefox, webkit, type Browser, type BrowserContext, type Page } from 'playwright-core';
+import { chromium, firefox, webkit, type Browser, type BrowserContext, type Frame, type Page } from 'playwright-core';
 import type { Snapshot, CollectConfig } from '../engine/types';
 
 export interface LauncherOptions {
@@ -30,34 +30,176 @@ function loadBundle(): string {
   return bundleContent;
 }
 
-/** Try to find an existing browser executable in the Playwright cache. */
-function findBrowserExecutable(engine: string): string | null {
-  const cacheDir = path.join(os.homedir(), 'Library', 'Caches', 'ms-playwright');
-  if (!fs.existsSync(cacheDir)) return null;
+export type BrowserKind = 'chromium' | 'chromium-headless-shell';
 
-  const platform = process.platform;
-  if (engine === 'chromium') {
-    // Look for chromium-* directories (sorted newest first)
-    const dirs = fs.readdirSync(cacheDir)
-      .filter(d => d.startsWith('chromium-'))
-      .sort((a, b) => {
-        const na = parseInt(a.split('-')[1]) || 0;
-        const nb = parseInt(b.split('-')[1]) || 0;
-        return nb - na;
-      });
-    for (const dir of dirs) {
-      if (platform === 'darwin') {
-        const app = path.join(cacheDir, dir, 'chrome-mac-arm64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing');
-        if (fs.existsSync(app)) return app;
-        const appIntel = path.join(cacheDir, dir, 'chrome-mac', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing');
-        if (fs.existsSync(appIntel)) return appIntel;
-      } else if (platform === 'linux') {
-        const bin = path.join(cacheDir, dir, 'chrome-linux', 'chrome');
-        if (fs.existsSync(bin)) return bin;
-      }
-    }
+export interface BrowserInstall {
+  kind: BrowserKind;
+  revision: number;
+  dir: string;
+  executable: string | null;
+}
+
+export interface BrowserExpectation {
+  chromium?: number;
+  headlessShell?: number;
+  playwrightVersion?: string;
+}
+
+export type BrowserDiagnosisStatus = 'exact' | 'fallback' | 'missing';
+
+export interface BrowserDiagnosis {
+  platform: string;
+  cacheRoots: string[];
+  expected: BrowserExpectation;
+  installs: BrowserInstall[];
+  status: BrowserDiagnosisStatus;
+  hint: string | null;
+}
+
+export function browserCacheRoots(): string[] {
+  const fromEnv = process.env.PLAYWRIGHT_BROWSERS_PATH;
+  if (fromEnv) return [fromEnv];
+
+  if (process.platform === 'darwin') {
+    return [path.join(os.homedir(), 'Library', 'Caches', 'ms-playwright')];
+  }
+  if (process.platform === 'win32') {
+    const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+    return [path.join(localAppData, 'ms-playwright')];
+  }
+  return [path.join(os.homedir(), '.cache', 'ms-playwright')];
+}
+
+export function resolveExecutableIn(dir: string, platform: string): string | null {
+  const candidates: string[] = [];
+  if (platform === 'darwin') {
+    candidates.push(
+      path.join(dir, 'chrome-mac-arm64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing')
+    );
+    candidates.push(
+      path.join(dir, 'chrome-mac', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing')
+    );
+  } else if (platform === 'linux') {
+    candidates.push(path.join(dir, 'chrome-linux', 'chrome'));
+    candidates.push(path.join(dir, 'chrome-linux64', 'chrome'));
+  } else if (platform === 'win32') {
+    candidates.push(path.join(dir, 'chrome-win', 'chrome.exe'));
+    candidates.push(path.join(dir, 'chrome-win64', 'chrome.exe'));
+  }
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
   }
   return null;
+}
+
+export function listBrowserInstalls(cacheRoots: string[] = browserCacheRoots()): BrowserInstall[] {
+  const installs: BrowserInstall[] = [];
+  for (const root of cacheRoots) {
+    if (!fs.existsSync(root)) continue;
+    for (const entry of fs.readdirSync(root)) {
+      const match = /^(chromium|chromium_headless_shell)-(\d+)$/.exec(entry);
+      if (!match) continue;
+      const dir = path.join(root, entry);
+      installs.push({
+        kind: match[1] === 'chromium' ? 'chromium' : 'chromium-headless-shell',
+        revision: parseInt(match[2], 10),
+        dir,
+        executable: resolveExecutableIn(dir, process.platform),
+      });
+    }
+  }
+  return installs.sort((a, b) => b.revision - a.revision);
+}
+
+export function expectedBrowsers(): BrowserExpectation {
+  try {
+    const pkgPath = require.resolve('playwright-core/package.json');
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')) as { version?: string };
+    const browsersPath = path.join(path.dirname(pkgPath), 'browsers.json');
+    const browsers = JSON.parse(fs.readFileSync(browsersPath, 'utf-8')) as {
+      browsers?: Array<{ name: string; revision: string }>;
+    };
+    const chromium = browsers.browsers?.find(browser => browser.name === 'chromium');
+    const headlessShell = browsers.browsers?.find(browser => browser.name === 'chromium-headless-shell');
+    return {
+      chromium: chromium ? parseInt(chromium.revision, 10) : undefined,
+      headlessShell: headlessShell ? parseInt(headlessShell.revision, 10) : undefined,
+      playwrightVersion: pkg.version,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function installCommand(expected: BrowserExpectation): string {
+  return expected.playwrightVersion
+    ? `npx playwright@${expected.playwrightVersion} install chromium`
+    : 'npx playwright install chromium';
+}
+
+export function diagnoseBrowser(
+  engine: string = 'chromium',
+  cacheRoots: string[] = browserCacheRoots()
+): BrowserDiagnosis {
+  const expected = expectedBrowsers();
+  const installs = listBrowserInstalls(cacheRoots);
+  const chromiumInstalls = installs.filter(install => install.kind === 'chromium' && install.executable);
+  const exact = expected.chromium
+    ? chromiumInstalls.some(install => install.revision === expected.chromium)
+    : chromiumInstalls.length > 0;
+
+  if (engine !== 'chromium') {
+    return {
+      platform: process.platform,
+      cacheRoots,
+      expected,
+      installs,
+      status: 'missing',
+      hint: `Automatic discovery only covers chromium; run "npx playwright install ${engine}" if launch fails.`,
+    };
+  }
+
+  if (exact) {
+    return { platform: process.platform, cacheRoots, expected, installs, status: 'exact', hint: null };
+  }
+
+  if (chromiumInstalls.length > 0) {
+    const found = chromiumInstalls.map(install => install.revision).join(', ');
+    return {
+      platform: process.platform,
+      cacheRoots,
+      expected,
+      installs,
+      status: 'fallback',
+      hint: `Found chromium revision(s) ${found}, expected ${expected.chromium ?? 'unknown'}. Launch may work through the fallback. To install the expected build: ${installCommand(expected)}`,
+    };
+  }
+
+  return {
+    platform: process.platform,
+    cacheRoots,
+    expected,
+    installs,
+    status: 'missing',
+    hint: `No chromium install found. Install it with: ${installCommand(expected)}`,
+  };
+}
+
+/** Try to find an existing browser executable in the Playwright cache. */
+export function findBrowserExecutable(
+  engine: string,
+  cacheRoots: string[] = browserCacheRoots()
+): string | null {
+  if (engine !== 'chromium') return null;
+
+  const installs = listBrowserInstalls(cacheRoots).filter(
+    install => install.kind === 'chromium' && install.executable
+  );
+  if (!installs.length) return null;
+
+  const expected = expectedBrowsers().chromium;
+  const exact = installs.find(install => install.revision === expected);
+  return (exact ?? installs[0]).executable;
 }
 
 export class BrowserLauncher {
@@ -84,7 +226,14 @@ export class BrowserLauncher {
       launchOptions.executablePath = execPath;
     }
 
-    this.browser = await factory.launch(launchOptions);
+    try {
+      this.browser = await factory.launch(launchOptions);
+    } catch (error) {
+      const diagnosis = diagnoseBrowser(engine);
+      throw new Error(
+        `${(error as Error).message}\nBrowser diagnosis: ${diagnosis.status}. Run "cssprobe-cli doctor" for details.`
+      );
+    }
 
     // Load saved state if provided
     const vp = this.options.viewport || { width: 1280, height: 720 };
@@ -110,11 +259,12 @@ export class BrowserLauncher {
     }
   }
 
-  async collect(cfg: CollectConfig): Promise<Snapshot> {
+  async collect(cfg: CollectConfig, target?: Page | Frame): Promise<Snapshot> {
     if (!this.page) throw new Error('Browser not opened. Call open() first.');
+    const host = target ?? this.page;
     const bundle = loadBundle();
-    await this.page.addScriptTag({ content: bundle });
-    const snapshot = await this.page.evaluate((config) => {
+    await host.addScriptTag({ content: bundle });
+    const snapshot = await host.evaluate((config) => {
       return (window as any).__cssprobe_cli.collect(config);
     }, cfg);
     return snapshot as Snapshot;

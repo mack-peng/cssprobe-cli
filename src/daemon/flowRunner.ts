@@ -4,7 +4,7 @@
 import path from 'path';
 import util from 'util';
 import { pathToFileURL } from 'url';
-import type { Page } from 'playwright-core';
+import type { BrowserContext, Page } from 'playwright-core';
 import type { BrowserLauncher } from '../browser/launcher';
 import {
   clickElement,
@@ -20,6 +20,13 @@ import { renderMarkdown } from '../engine/renderer';
 import { serializeEvalResult } from '../engine/evalSerializer';
 import { saveScreenshotFile } from '../utils/screenshot';
 import type { Finding, Snapshot } from '../engine/types';
+import { describeFrames, type FrameInfo } from '../browser/frames';
+import { expect as expectValue, type Matchers } from './expect';
+
+export interface FlowPageError {
+  message: string;
+  stack?: string;
+}
 
 export interface FlowEnvelope {
   ok: boolean;
@@ -27,6 +34,7 @@ export interface FlowEnvelope {
   result?: unknown;
   error?: string;
   elapsedMs: number;
+  pageErrors?: FlowPageError[];
 }
 
 export interface WaitForOptions {
@@ -42,6 +50,10 @@ export interface WaitOutcome {
 
 export interface FlowApi {
   page: Page;
+  context: BrowserContext;
+  frames(): FrameInfo[];
+  newPage(): Promise<Page>;
+  expect(actual: unknown): Matchers;
   click(selector: string, opts?: { nth?: number; force?: boolean; timeout?: number }): Promise<TargetResult>;
   hover(selector: string, opts?: { nth?: number; force?: boolean; timeout?: number }): Promise<TargetResult>;
   type(selector: string, text: string, opts?: TypeOptions): Promise<void>;
@@ -153,6 +165,10 @@ function buildFlowApi(launcher: BrowserLauncher, logs: string[], baseDir: string
       if (opts?.format === 'markdown') return renderMarkdown(snapshot, findings);
       return { snapshot, findings };
     },
+    context: page.context(),
+    frames: () => describeFrames(page),
+    newPage: () => page.context().newPage(),
+    expect: (actual) => expectValue(actual),
     screenshot: async (opts) => {
       const buffer = await page.screenshot({ fullPage: opts?.fullPage });
       const out = opts?.path ? path.resolve(baseDir, opts.path) : undefined;
@@ -172,6 +188,10 @@ function renderEnvelope(env: FlowEnvelope): string {
   } else {
     lines.push(`Flow failed in ${env.elapsedMs}ms: ${env.error}`);
   }
+  if (env.pageErrors?.length) {
+    lines.push('', `Page errors (${env.pageErrors.length}):`);
+    lines.push(...env.pageErrors.map(error => `  - ${error.message}`));
+  }
   if (env.logs.length) {
     lines.push('', 'Logs:');
     lines.push(...env.logs.map(line => `  ${line}`));
@@ -187,6 +207,15 @@ export async function runFlow(
   const logs: string[] = [];
   const started = Date.now();
   const restore = captureConsole(logs);
+  const pageErrors: FlowPageError[] = [];
+  const page = launcher.getPage();
+  const onPageError = (error: Error) => {
+    pageErrors.push({
+      message: error.message,
+      stack: error.stack?.split('\n').slice(0, 6).join('\n'),
+    });
+  };
+  page?.on('pageerror', onPageError);
   let env: FlowEnvelope;
 
   try {
@@ -198,8 +227,10 @@ export async function runFlow(
   } catch (e) {
     env = { ok: false, logs, error: (e as Error).message, elapsedMs: Date.now() - started };
   } finally {
+    page?.off('pageerror', onPageError);
     restore();
   }
+  if (pageErrors.length) env.pageErrors = pageErrors;
 
   return {
     text: opts.json ? JSON.stringify(env, null, 2) : renderEnvelope(env),
