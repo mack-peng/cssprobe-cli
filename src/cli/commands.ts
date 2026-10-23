@@ -26,6 +26,8 @@ const open = declareCommand({
     headed: z.boolean().optional().describe('show the browser window'),
     viewport: z.string().optional().describe('viewport size as WxH (e.g. 1280x720)'),
     state: z.string().optional().describe('path to saved state file (cookies + localStorage)'),
+    'expect-url': z.string().optional().describe('regex the final page URL must match'),
+    'fail-on-login': z.boolean().optional().describe('fail when the page redirects to a login URL'),
   }),
 });
 
@@ -44,6 +46,40 @@ const status = declareCommand({
   description: 'Show current session status',
 });
 
+const framesCmd = declareCommand({
+  name: 'frames',
+  category: 'core',
+  description: 'List frames in the current page',
+});
+
+const scenarioCmd = declareCommand({
+  name: 'scenario',
+  category: 'core',
+  description: 'Run a JSON scenario suite (regression cases, artifacts, JUnit)',
+  args: z.object({
+    action: z.literal('run').describe('only "run" is supported'),
+    file: z.string().describe('scenario suite JSON path'),
+  }),
+  options: z.object({
+    state: z.string().optional().describe('fallback state file when the suite/case does not set one'),
+    artifacts: z.string().optional().describe('artifact directory (default: ~/.cssprobe-cli/scenario-runs/<suite>-<timestamp>)'),
+    junit: z.string().optional().describe('write a JUnit XML report to this path'),
+    bail: z.boolean().optional().describe('stop after the first failing case'),
+    headed: z.boolean().optional().describe('show the browser window'),
+    browser: z.enum(['chromium', 'firefox', 'webkit']).optional().describe('browser engine (default chromium)'),
+    viewport: z.string().optional().describe('viewport size as WxH (default: suite defaults or 1280x720)'),
+  }),
+});
+
+const doctor = declareCommand({
+  name: 'doctor',
+  category: 'core',
+  description: 'Diagnose browser installation and Playwright revision mismatch',
+  options: z.object({
+    engine: z.string().optional().describe('browser engine: chromium, firefox, webkit (default: chromium)'),
+  }),
+});
+
 // ── cssprobe commands ──
 
 const inspect = declareCommand({
@@ -58,6 +94,7 @@ const inspect = declareCommand({
     brief: z.boolean().optional().describe('compact output: tree sketch + warnings/errors only'),
     layout: z.boolean().optional().describe('ASCII layout diagram showing element positions and sizes'),
     depth: numberArg.optional().describe('DOM tree depth (default: auto, max 20)'),
+    frame: z.string().optional().describe('target frame: index, name, or URL substring (default: main frame)'),
   }),
 });
 
@@ -70,6 +107,7 @@ const tree = declareCommand({
   }),
   options: z.object({
     depth: numberArg.optional().describe('tree depth (default: auto, max 20)'),
+    frame: z.string().optional().describe('target frame: index, name, or URL substring (default: main frame)'),
   }),
 });
 
@@ -80,6 +118,9 @@ const layout = declareCommand({
   args: z.object({
     selector: z.string().describe('CSS selector for the root element'),
   }),
+  options: z.object({
+    frame: z.string().optional().describe('target frame: index, name, or URL substring (default: main frame)'),
+  }),
 });
 
 const findings = declareCommand({
@@ -89,6 +130,9 @@ const findings = declareCommand({
   args: z.object({
     selector: z.string().describe('CSS selector for the root element'),
   }),
+  options: z.object({
+    frame: z.string().optional().describe('target frame: index, name, or URL substring (default: main frame)'),
+  }),
 });
 
 const injectCss = declareCommand({
@@ -97,6 +141,9 @@ const injectCss = declareCommand({
   description: 'Inject CSS into the current page',
   args: z.object({
     css: z.string().describe('CSS code to inject'),
+  }),
+  options: z.object({
+    frame: z.string().optional().describe('target frame: index, name, or URL substring (default: main frame)'),
   }),
 });
 
@@ -127,7 +174,10 @@ const evalCmd = declareCommand({
   category: 'core',
   description: 'Evaluate JavaScript expression on the page (browser context)',
   args: z.object({
-    expression: z.string().describe('JavaScript expression to evaluate'),
+    expression: z.string().describe('JavaScript expression, or @file / - (stdin) for long scripts'),
+  }),
+  options: z.object({
+    frame: z.string().optional().describe('target frame: index, name, or URL substring (default: main frame)'),
   }),
 });
 
@@ -136,7 +186,7 @@ const playwrightCmd = declareCommand({
   category: 'core',
   description: 'Execute Playwright API call (Node.js context)',
   args: z.object({
-    call: z.string().describe('Playwright API call, e.g. "page.setViewportSize({width: 1280, height: 720})"'),
+    call: z.string().describe('Playwright API call, or @file / - (stdin); e.g. "page.setViewportSize({width: 1280, height: 720})"'),
   }),
 });
 
@@ -203,6 +253,39 @@ const waitForCmd = declareCommand({
   }),
 });
 
+const sampleCmd = declareCommand({
+  name: 'sample',
+  category: 'core',
+  description: 'Sample a JS expression over time and return a timeline with summary stats',
+  args: z.object({
+    expression: z.string().describe('JS expression sampled on an interval'),
+  }),
+  options: z.object({
+    interval: numberArg.optional().describe('sampling interval in ms (default 250)'),
+    duration: numberArg.optional().describe('total sampling duration in ms (default 5000)'),
+    key: z.string().optional().describe('dot path for numeric extraction, e.g. "top" or "box.y"'),
+    'tail-from': numberArg.optional().describe('tail starts at this elapsed ms (default: last 5000ms)'),
+    'ignore-errors': z.boolean().optional().describe('record evaluation errors as sample points instead of aborting'),
+    frame: z.string().optional().describe('target frame: index, name, or URL substring (default: main frame)'),
+  }),
+});
+
+const waitStableCmd = declareCommand({
+  name: 'wait-stable',
+  category: 'core',
+  description: 'Wait until a JS expression stops changing (tolerance + stable window)',
+  args: z.object({
+    expression: z.string().describe('JS expression polled until stable'),
+  }),
+  options: z.object({
+    tolerance: numberArg.optional().describe('absolute tolerance for numeric values (default 0)'),
+    window: numberArg.optional().describe('stable window in ms (default 1500)'),
+    timeout: numberArg.optional().describe('timeout in ms (default 30000)'),
+    interval: numberArg.optional().describe('polling interval in ms (default 200)'),
+    frame: z.string().optional().describe('target frame: index, name, or URL substring (default: main frame)'),
+  }),
+});
+
 const runCmd = declareCommand({
   name: 'run',
   category: 'core',
@@ -237,6 +320,16 @@ const stateSave = declareCommand({
   description: 'Save current browser session state (cookies + localStorage)',
   options: z.object({
     name: z.string().optional().describe('state file name (default: session)'),
+  }),
+});
+
+const stateCheck = declareCommand({
+  name: 'state-check',
+  category: 'core',
+  description: 'Validate a saved state file: cookies, expiry, and target domain coverage',
+  options: z.object({
+    state: z.string().optional().describe('state file path (default: ~/.cssprobe-cli/states/session.json)'),
+    url: z.string().optional().describe('target URL whose hostname must be covered by the cookies'),
   }),
 });
 
@@ -350,15 +443,15 @@ const mcpUninstall = declareCommand({
 
 const commandsArray: AnyCommandSchema[] = [
   // session management
-  open, close, status,
+  open, close, status, framesCmd, doctor, scenarioCmd,
   // cssprobe
   inspect, tree, layout, findings, injectCss,
   // browser
   resize, evalCmd, playwrightCmd, screenshot,
   // interaction
-  click, hover, typeCmd, waitForCmd, runCmd,
+  click, hover, typeCmd, waitForCmd, sampleCmd, waitStableCmd, runCmd,
   // state
-  stateImport, stateSave,
+  stateImport, stateSave, stateCheck,
   // config
   configShow, configSet, configList, configUse, configNew, configPath,
   // skill

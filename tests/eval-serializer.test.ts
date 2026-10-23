@@ -97,4 +97,16 @@ describe('evalSerializer', () => {
     assert.deepStrictEqual(serializeEvalResult([1, [2, 3]]), [1, [2, 3]]);
     assert.deepStrictEqual(serializeEvalResult({ a: { b: 2 } }), { a: { b: 2 } });
   });
+
+  it('keeps undefined object fields as null', () => {
+    assert.deepStrictEqual(serializeEvalResult({ a: undefined, b: 1 }), { a: null, b: 1 });
+  });
+
+  it('keeps undefined array slots as null', () => {
+    assert.deepStrictEqual(serializeEvalResult([undefined, 2]), [null, 2]);
+  });
+
+  it('keeps top-level undefined distinguishable', () => {
+    assert.strictEqual(serializeEvalResult(undefined), undefined);
+  });
 });

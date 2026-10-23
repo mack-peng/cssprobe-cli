@@ -155,9 +155,13 @@ Exposes 10 tools: `cssprobe_open`, `cssprobe_inspect`, `cssprobe_tree`, `cssprob
 | `open [url] --headed` | Show browser window |
 | `open [url] --state <file>` | Open with saved cookies + localStorage |
 | `open [url] --viewport 1280x720` | Custom viewport size |
+| `open [url] --expect-url <regex>` | Fail unless the final URL matches the pattern |
+| `open [url] --fail-on-login` | Fail fast when redirected to a login URL |
 | `close` | Close browser session |
 | `close --all` | Close all sessions across all workspaces |
-| `status` | Show session status |
+| `status` | Show session status (URL, title, frame count) |
+| `frames` | List frames: index, name, URL, main marker |
+| `doctor` | Diagnose browser install vs Playwright expected revision |
 
 ### CSS Inspection
 
@@ -171,6 +175,8 @@ Exposes 10 tools: `cssprobe_open`, `cssprobe_inspect`, `cssprobe_tree`, `cssprob
 | `layout <selector>` | ASCII layout diagram |
 | `findings <selector>` | Only issues/warnings/errors |
 
+Inspection commands accept `--frame <index|name|url-substring>` to target an iframe; the default is the main frame.
+
 ### CSS Injection
 
 | Command | Description |
@@ -182,7 +188,8 @@ Exposes 10 tools: `cssprobe_open`, `cssprobe_inspect`, `cssprobe_tree`, `cssprob
 | Command | Description |
 |---------|-------------|
 | `resize <width> <height>` | Resize browser viewport |
-| `eval <expression>` | Evaluate JavaScript (browser context); DOM nodes are auto-serialized |
+| `eval <expression>` | Evaluate JavaScript (browser context); DOM nodes are auto-serialized; promises are awaited, `undefined` fields become `null` |
+| `eval @file` / `eval -` | Read the expression from a file or stdin |
 | `playwright <call>` | Execute Playwright API (Node.js context) |
 | `screenshot` | Take screenshot (saves to ~/.cssprobe-cli/screenshots/, --out to override) |
 
@@ -196,6 +203,8 @@ Exposes 10 tools: `cssprobe_open`, `cssprobe_inspect`, `cssprobe_tree`, `cssprob
 | `wait-for <selector>` | Wait for selector state (`--state visible\|hidden\|attached\|detached`, `--timeout ms`) |
 | `wait-for --js "<predicate>"` | Wait until a JS predicate is truthy |
 | `wait-for --network-idle` | Wait until the page is network-idle |
+| `sample "<expr>"` | Sample an expression over time (`--interval`, `--duration`, `--key`, `--frame`); returns timeline + summary |
+| `wait-stable "<expr>"` | Wait until an expression stops changing (`--tolerance`, `--window`, `--timeout`) |
 | `run <file>` | Run a multi-step flow script |
 
 `click` / `hover` support `--nth N` (1-based, default first match), `--force` (skip actionability checks) and `--timeout ms`. Without `--nth`, multiple matches fail (strict) to prevent wrong-target clicks.
@@ -206,6 +215,7 @@ Exposes 10 tools: `cssprobe_open`, `cssprobe_inspect`, `cssprobe_tree`, `cssprob
 |---------|-------------|
 | `state-import <file>` | Import cookies from Netscape format |
 | `state-save` | Save current browser session state (cookies + localStorage) |
+| `state-check` | Validate a state file: cookie count, expiry, target domain coverage (`--state`, `--url`) |
 
 ### Configuration
 
@@ -237,7 +247,7 @@ For repeatable flows, write a script and run it with one command. The script run
 
 ```js
 // flow.js
-export default async ({ page, click, waitFor, type, inspect, screenshot, log }) => {
+export default async ({ page, context, frames, newPage, click, waitFor, type, inspect, screenshot, expect, log }) => {
   await page.goto('https://example.com/editor', { waitUntil: 'domcontentloaded' });
   await waitFor('.editor-canvas', { state: 'visible', timeout: 10000 });
 
@@ -259,11 +269,51 @@ export default async ({ page, click, waitFor, type, inspect, screenshot, log }) 
 cssprobe-cli run ./flow.js        # --timeout ms for the whole script (default 300000, 0 = unlimited)
 ```
 
-Scripts must `default-export` an async function receiving the API object: `page`, `click`, `hover`, `type`, `waitFor`, `inspect`, `screenshot`, `log`. `screenshot` relative paths resolve against the script's directory; logs (`log()` and `console.*`) are collected and returned with the result. On failure the command exits `1`, prints the collected logs, and keeps the session alive.
+Scripts must `default-export` an async function receiving the API object: `page`, `context`, `frames()`, `newPage()`, `click`, `hover`, `type`, `waitFor`, `inspect`, `screenshot`, `expect`, `log`. Uncaught page errors are collected into the result envelope as `pageErrors`. `screenshot` relative paths resolve against the script's directory; logs (`log()` and `console.*`) are collected and returned with the result. On failure the command exits `1`, prints the collected logs, and keeps the session alive.
 
 > Scripts are executed by the local daemon with full Node privileges — only run trusted scripts.
 
 ---
+
+## Scenario Suites (Regression)
+
+Run repeatable regression cases from a JSON suite: each case opens a fresh browser, executes steps, asserts on saved values, and writes artifacts + an optional JUnit report.
+
+```bash
+cssprobe-cli scenario run suites/ticket-26571394.json \
+  --state ~/.cssprobe-cli/states/preprod.json \
+  --artifacts out/ticket-26571394 \
+  --junit out/junit.xml
+```
+
+```json
+{
+  "name": "ticket 26571394 preprod",
+  "defaults": { "viewport": { "width": 1280, "height": 800 } },
+  "cases": [
+    {
+      "name": "refresh keeps the hash section aligned",
+      "url": "https://example.com/#listen-to-tcmi",
+      "steps": [
+        { "do": "sample", "expression": "({ hash: location.hash, top: Math.round(document.querySelector('#listen-to-tcmi')?.getBoundingClientRect().top ?? -1) })", "interval": 250, "duration": 12000, "key": "top", "tailFrom": 9500, "save": "timeline" },
+        { "do": "assert", "label": "hash retained", "on": "timeline", "path": "summary.last.value.hash", "eq": "#listen-to-tcmi" },
+        { "do": "assert", "label": "anchor stable", "on": "timeline", "path": "summary.tail.min", "min": 70 },
+        { "do": "assert", "label": "anchor stable", "on": "timeline", "path": "summary.tail.max", "max": 90 }
+      ]
+    },
+    {
+      "name": "deployment fingerprint",
+      "url": "https://example.com/",
+      "steps": [
+        { "do": "waitFor", "js": "() => !!window.DEBUG?.NavigatorStore", "timeout": 20000 },
+        { "do": "assert", "globals": { "DEBUG.NavigatorStore.setHashRestoreProtected": "function" }, "absent": ["DEBUG.NavigatorStore.navigateToSectionId"] }
+      ]
+    }
+  ]
+}
+```
+
+Steps: `goto`, `reload`, `eval`, `sample`, `waitStable`, `click`, `waitFor`, `screenshot`, `assert`. `sample` and `eval` save values with `save: "<name>"`; assertions read them with `on: "<name>"` + `path`, or check live `state` (`url`, `title`, `frames`), `url`, `globals`, `absent`. `sample` supports `key`, `tailFrom`, `ignoreErrors`; every run writes `summary.json`, per-case `case.json`, sample series and failure screenshots.
 
 ## Confidence Model
 

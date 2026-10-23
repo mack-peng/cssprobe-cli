@@ -3,11 +3,17 @@ import path from 'path';
 import os from 'os';
 import { minimist } from './minimist';
 import { parseCommand } from './command';
+import { resolveInputArg } from './input';
 import { commands } from './commands';
 import { TextOutput, JsonOutput } from './output';
 import { loadConfig, maskConfig, writeRcConfig, getRcConfig, setActiveProfile, createProfile, rcFilePath } from '../config/config';
 import { loadSession } from '../daemon/session';
-import { openSession, closeSession, getSessionStatus, runSessionCommand, saveScreenshotFile } from './session-ops';
+import { openSession, closeSession, getSessionStatus, getPageInfo, runSessionCommand, saveScreenshotFile } from './session-ops';
+import { analyzeState } from './state-check';
+import { diagnoseBrowser } from '../browser/launcher';
+import { suiteSchema } from '../scenario/schema';
+import { runScenario } from '../scenario/runner';
+import { formatConsole } from '../scenario/reporters';
 import { runMcpServer } from '../mcp';
 import type { Output } from './output';
 import type { MinimistArgs } from './minimist';
@@ -59,15 +65,25 @@ export async function program() {
     case 'close':
       await handleClose(command!, rawArgs, output);
       return;
+    case 'doctor':
+      handleDoctor(command!, rawArgs, output);
+      return;
+    case 'scenario':
+      await handleScenario(command!, rawArgs, output);
+      return;
     case 'status':
       await handleStatus(output);
       return;
     case 'state-import':
       await handleStateImport(command!, rawArgs, output);
       return;
+    case 'state-check':
+      handleStateCheck(command!, rawArgs, output);
+      return;
     case 'state-save':
       await handleStateSave(command!, rawArgs, output);
       return;
+    case 'frames':
     case 'inspect':
     case 'tree':
     case 'layout':
@@ -81,6 +97,8 @@ export async function program() {
     case 'hover':
     case 'type':
     case 'wait-for':
+    case 'sample':
+    case 'wait-stable':
       await handleSessionCommand(commandName!, command!, rawArgs, output);
       return;
     case 'run':
@@ -173,6 +191,8 @@ async function handleOpen(
       headed: !!parsed.headed,
       viewport,
       state: parsed.state as string | undefined,
+      expectUrl: parsed['expect-url'] as string | undefined,
+      failOnLogin: !!parsed['fail-on-login'],
     });
 
     if (output.json) {
@@ -212,12 +232,116 @@ async function handleClose(command: AnyCommandSchema, args: MinimistArgs, output
   }
 }
 
+async function handleScenario(
+  command: AnyCommandSchema,
+  args: MinimistArgs,
+  output: Output
+) {
+  try {
+    const cmdArgs = splitArgs(args);
+    const parsed = parseCommand(command, cmdArgs as Record<string, string> & { _: string[] });
+    const file = path.resolve(parsed.file as string);
+    if (!fs.existsSync(file)) output.error(`Scenario suite not found: ${file}`);
+
+    const raw = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    const validation = suiteSchema.safeParse(raw);
+    if (!validation.success) {
+      const issues = validation.error.issues
+        .map(issue => `${issue.path.join('.') || '(root)'}: ${issue.message}`)
+        .join('\n');
+      output.error(`Invalid scenario suite:\n${issues}`);
+    }
+
+    let viewport: { width: number; height: number } | undefined;
+    const viewportStr = parsed.viewport as string | undefined;
+    if (viewportStr) {
+      const parts = viewportStr.split('x');
+      const width = parseInt(parts[0], 10);
+      const height = parseInt(parts[1], 10);
+      if (parts.length !== 2 || isNaN(width) || isNaN(height)) {
+        output.error('Invalid viewport format. Use WxH (e.g. 1280x720)');
+      }
+      viewport = { width, height };
+    }
+
+    const result = await runScenario(validation.data, file, {
+      artifactsDir: parsed.artifacts as string | undefined,
+      junitPath: parsed.junit as string | undefined,
+      bail: !!parsed.bail,
+      headed: !!parsed.headed,
+      browser: parsed.browser as string | undefined,
+      viewport,
+      state: parsed.state as string | undefined,
+    });
+
+    if (output.json) {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      console.log(formatConsole(result.suite, result.results));
+      console.log(`Artifacts: ${result.artifactsDir}`);
+      if (parsed.junit) console.log(`JUnit: ${path.resolve(parsed.junit as string)}`);
+    }
+
+    if (!result.ok) process.exit(1);
+  } catch (e: any) {
+    output.error(e instanceof Error ? e.message : String(e));
+  }
+}
+
+function handleDoctor(
+  command: AnyCommandSchema,
+  args: MinimistArgs,
+  output: Output
+) {
+  try {
+    const cmdArgs = splitArgs(args);
+    const parsed = parseCommand(command, cmdArgs as Record<string, string> & { _: string[] });
+    const diagnosis = diagnoseBrowser(parsed.engine as string | undefined);
+
+    if (output.json) {
+      console.log(JSON.stringify(diagnosis, null, 2));
+      return;
+    }
+
+    console.log(`Platform: ${diagnosis.platform}`);
+    console.log(`Cache roots: ${diagnosis.cacheRoots.join(', ')}`);
+    console.log(
+      `Expected: chromium ${diagnosis.expected.chromium ?? 'unknown'}, headless-shell ${
+        diagnosis.expected.headlessShell ?? 'unknown'
+      } (playwright-core ${diagnosis.expected.playwrightVersion ?? 'unknown'})`
+    );
+    if (diagnosis.installs.length) {
+      console.log('Installed:');
+      for (const install of diagnosis.installs) {
+        console.log(
+          `  ${install.kind}-${install.revision}${install.executable ? '' : ' (no executable)'} ${install.dir}`
+        );
+      }
+    } else {
+      console.log('Installed: none');
+    }
+    console.log(`Status: ${diagnosis.status}`);
+    if (diagnosis.hint) console.log(`Hint: ${diagnosis.hint}`);
+  } catch (e: any) {
+    output.error(e instanceof Error ? e.message : String(e));
+  }
+}
+
 async function handleStatus(output: Output) {
   try {
     const result = await getSessionStatus();
 
+    let page: { url: string; title: string; frames: number } | null = null;
+    if (result.alive) {
+      try {
+        page = await getPageInfo();
+      } catch {
+        page = null;
+      }
+    }
+
     if (output.json) {
-      console.log(JSON.stringify(result, null, 2));
+      console.log(JSON.stringify({ ...result, page }, null, 2));
       return;
     }
 
@@ -230,7 +354,48 @@ async function handleStatus(output: Output) {
     console.log(`Status: ${result.alive ? 'alive' : 'dead'}`);
     if (result.alive) {
       console.log(`Browser: ${result.config.browser.browserName}`);
+      if (page) {
+        console.log(`URL: ${page.url}`);
+        console.log(`Title: ${page.title}`);
+        console.log(`Frames: ${page.frames}`);
+      }
     }
+  } catch (e: any) {
+    output.error(e instanceof Error ? e.message : String(e));
+  }
+}
+
+function handleStateCheck(
+  command: AnyCommandSchema,
+  args: MinimistArgs,
+  output: Output
+) {
+  try {
+    const cmdArgs = splitArgs(args);
+    const parsed = parseCommand(command, cmdArgs as Record<string, string> & { _: string[] });
+    const file = path.resolve(
+      (parsed.state as string | undefined) ??
+        path.join(os.homedir(), '.cssprobe-cli', 'states', 'session.json')
+    );
+    if (!fs.existsSync(file)) output.error(`State file not found: ${file}`);
+
+    const raw = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    if (!raw || !Array.isArray(raw.cookies)) throw new Error(`Invalid state file (missing cookies): ${file}`);
+    const report = analyzeState(raw, parsed.url as string | undefined);
+
+    if (output.json) {
+      console.log(JSON.stringify({ file, ...report }, null, 2));
+      return;
+    }
+
+    console.log(`State: ${file}`);
+    console.log(`Cookies: ${report.cookies} (${report.sessionCookies} session)`);
+    console.log(`Domains: ${report.domains.join(', ') || '(none)'}`);
+    if (report.targetMatches !== null) {
+      console.log(`Target match: ${report.targetMatches ? 'yes' : 'no'}`);
+    }
+    console.log(`Status: ${report.ok ? 'ok' : 'attention'}`);
+    for (const warning of report.warnings) console.log(`Warning: ${warning}`);
   } catch (e: any) {
     output.error(e instanceof Error ? e.message : String(e));
   }
@@ -257,6 +422,13 @@ async function handleSessionCommand(
 ) {
   try {
     const cmdArgs = splitArgs(args);
+    if (commandName === 'eval' || commandName === 'playwright') {
+      const input = cmdArgs._[1];
+      if (typeof input === 'string') {
+        cmdArgs._ = cmdArgs._.slice();
+        cmdArgs._[1] = resolveInputArg(input);
+      }
+    }
     const parsed = parseCommand(command, cmdArgs as Record<string, string> & { _: string[] });
 
     const result = await runSessionCommand(commandName, command, parsed, !!args.json);

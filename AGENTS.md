@@ -4,7 +4,7 @@
 
 `cssprobe-cli` — Runtime CSS probe for layout/scroll/overflow/color/font inspection with session-based browser management. Entrypoint: `bin/cssprobe-cli.js` → `require('../dist/index')`.
 Build: `npm run build` (= `tsc` + `esbuild` collector IIFE bundle + `esbuild` daemon entry + `tsx scripts/generate-help.ts`).
-Test: `npm test` (= `tsx --test tests/*.test.ts` — Node.js built-in test runner, 108 tests).
+Test: `npm test` (= `tsx --test tests/*.test.ts` — Node.js built-in test runner, 170 tests).
 Dependencies: `playwright-core`, `zod`. Dev: `typescript`, `@types/node`, `tsx`, `esbuild`.
 
 ## Architecture
@@ -17,11 +17,15 @@ src/
 │   ├── commands.ts            # Command definitions — all Zod schemas
 │   ├── command.ts             # declareCommand(), parseCommand() (Zod validation)
 │   ├── output.ts              # TextOutput / JsonOutput strategy pattern
+│   ├── input.ts               # @file / stdin argument expansion for eval and playwright
+│   ├── state-check.ts         # State file validation (cookie expiry, target domain)
+│   ├── url-guard.ts           # Login-redirect detection + --expect-url matching
 │   └── minimist.ts            # Arguments parser (forked from playwright-cli)
 ├── daemon/
 │   ├── session.ts             # Session management (single session, Unix socket)
 │   ├── daemon.ts              # Daemon process: browser lifecycle + command execution
-│   ├── flowRunner.ts          # Flow script loader/runner (run command): dynamic import, API injection, console capture
+│   ├── flowRunner.ts          # Flow script loader/runner (run command): dynamic import, API injection, console/pageerror capture
+│   ├── expect.ts              # Assertion matchers for flow scripts
 │   └── daemonEntry.ts         # Daemon entry point (spawned as child process)
 ├── engine/
 │   ├── types.ts               # Shared types: Snapshot, TreeNode, Finding, Confidence
@@ -30,8 +34,15 @@ src/
 │   ├── evalSerializer.ts      # Self-contained serializer for eval results (runs in-page via JSHandle.evaluate)
 │   └── renderer.ts            # Markdown / JSON rendering
 ├── browser/
-│   ├── launcher.ts            # Playwright wrapper: launch, navigate, inject collector
+│   ├── launcher.ts            # Playwright wrapper: launch, navigate, browser discovery/doctor
+│   ├── frames.ts              # Frame listing + resolution (index/name/URL substring)
+│   ├── sampler.ts             # Timeline sampling + wait-stable (pure aggregation)
 │   └── interactions.ts        # Interaction primitives: click/hover/type/wait-for (shared by daemon + run API)
+├── scenario/
+│   ├── schema.ts              # Zod schemas for JSON suites, cases and steps
+│   ├── runner.ts              # Suite execution: browser per case, vars, artifacts, JUnit
+│   ├── assertions.ts          # Pure assertion evaluation (paths, matchers, globals, URL)
+│   └── reporters.ts           # Console summary + JUnit XML
 ├── config/
 │   ├── config.ts              # Config loader (CLI → env → ~/.cssprobe-clirc profiles)
 │   └── helpGenerator.ts       # Build-time: Zod schemas → dist/help.json
@@ -52,7 +63,7 @@ src/
 - **Output strategy**: `Output` interface → `TextOutput` (Markdown for inspect, tables for lists) / `JsonOutput` (machine-readable JSON).
 - **Config priority**: CLI flags → env vars → `~/.cssprobe-clirc` profiles. Switch with `-p <profile>`.
 - **State management**: `state-import` converts Netscape cookies; `state-save` persists the current session's cookies + localStorage after manual login. Session persists browser state until `close`.
-- **Browser discovery**: `findBrowserExecutable()` scans `~/Library/Caches/ms-playwright/chromium-*` for existing Chrome installations.
+- **Browser discovery**: `findBrowserExecutable()` scans the platform Playwright cache (macOS/Linux/Windows, `PLAYWRIGHT_BROWSERS_PATH` override), prefers the revision required by the bundled `playwright-core`, and falls back to the newest install. `doctor` reports expected vs installed revisions.
 - **Error format**: `Error: <message>` → JSON mode: `{ isError: true, error: "<message>" }` → `process.exit(1)`
 
 ## Commands
@@ -62,7 +73,9 @@ src/
   - `--viewport <WxH>` — Set viewport size (e.g. `--viewport 1280x720`)
   - `--state <file>` — Load saved state (cookies + localStorage)
 - `close` — Close the browser session
-- `status` — Show current session status
+- `status` — Show current session status (URL, title, frame count)
+- `frames` — List frames: index, name, URL, main marker
+- `doctor` — Diagnose browser installation vs expected Playwright revision
 
 ### CSS Inspection
 - `inspect <selector>` — Inspect runtime CSS of a page element
@@ -78,6 +91,9 @@ src/
 - `eval <expression>` — Evaluate JavaScript (browser context)
   - Returns raw string values (not JSON-quoted) for string results
   - DOM nodes / circular structures are auto-serialized (descriptors, `[Circular]`, `[Function: name]`, depth cap 6)
+  - Promises are awaited; `undefined` object/array values become `null`
+  - `@file` / `-` (stdin) reads long expressions from disk or stdin
+  - `--frame <index|name|url-substring>` evaluates inside an iframe
 - `playwright <call>` — Execute Playwright API call (Node.js context)
   - Returns `{ ok: true, value: null, note: ... }` when the call returns no value; throws a clear error message on failure
 - `screenshot` — Take a screenshot
@@ -93,13 +109,22 @@ src/
   - Default: `fill()` (replaces the value); `--sequential` for real key events (custom editors), `--clear` clears first
   - `--press <key>` — press a key after typing (e.g. `Enter`)
   - `--delay <ms>` — keystroke delay for `--sequential`
-- `wait-for` — Wait for a condition (three mutually exclusive modes)
+- `sample "<expr>"` — Sample an expression on an interval (`--interval`, `--duration`, `--key`, `--frame`), returning `summary` + `series`
+- `wait-stable "<expr>"` — Wait until the expression stops changing (`--tolerance`, `--window`, `--timeout`, `--interval`, `--frame`)
+- `wait-for` — Wait for a condition (three mutually exclusive modes); arrow-function/function predicates are invoked, bare expressions are evaluated as-is
   - `wait-for <selector>` — selector state: `--state visible|hidden|attached|detached` (default visible)
   - `wait-for --js "<predicate>"` — wait until a JS predicate is truthy
   - `wait-for --network-idle` — wait until the page is network-idle
   - `--timeout <ms>` — default 30000; timeout errors name the target
+- `scenario run <file>` — Run a JSON scenario suite (fresh browser per case, assertions, artifacts, JUnit)
+  - `--state <file>` — Fallback state file for cases without one
+  - `--artifacts <dir>` — Artifact directory (default `~/.cssprobe-cli/scenario-runs/<suite>-<timestamp>`)
+  - `--junit <file>` — Write a JUnit XML report
+  - `--bail` — Stop after the first failing case
+  - Steps: `goto`, `reload`, `eval`, `sample`, `waitStable`, `click`, `waitFor`, `screenshot`, `assert`
 - `run <file>` — Run a multi-step flow script inside the daemon
-  - Script default-exports an async function receiving the API object: `page`, `click`, `hover`, `type`, `waitFor`, `inspect`, `screenshot`, `log` (CJS also supported)
+  - Script default-exports an async function receiving the API object: `page`, `context`, `frames()`, `newPage()`, `click`, `hover`, `type`, `waitFor`, `inspect`, `screenshot`, `expect`, `log` (CJS also supported)
+  - Uncaught page errors are collected in the envelope as `pageErrors[]`
   - `--timeout <ms>` — whole-script guard (default 300000, 0 = unlimited); failure exits 1 and keeps the session alive
   - `screenshot` relative paths resolve against the script's directory; logs collected and returned
 
@@ -110,6 +135,9 @@ src/
   - `--merge <file>` — Existing state file to merge into
 - `state-save` — Save current browser session state (cookies + localStorage)
   - `--name <name>` — State file name (default: `session`)
+- `state-check` — Validate a saved state file (cookie count, expiry, target domain coverage)
+  - `--state <file>` — State file (default: `~/.cssprobe-cli/states/session.json`)
+  - `--url <url>` — Require the cookies to cover this hostname
 
 ### Config
 - `config-show` / `config-set` / `config-list` / `config-use` / `config-new` / `config-path`

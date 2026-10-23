@@ -215,7 +215,7 @@ confidence: DEFINITE 8 | INDEFINITE 0 | UNVERIFIABLE 1
 ## Common Failures Agents Face
 
 **"Browser not installed"**
-→ Run `npx playwright install chromium`.
+→ Run `cssprobe-cli doctor` first: it reports the expected vs installed Playwright revision and the exact install command. If a build is missing, run the printed command, usually `npx playwright install chromium`.
 
 **"File not found"**
 → Check the URL or file path. Local files need to exist on disk.

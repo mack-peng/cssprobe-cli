@@ -1,6 +1,7 @@
 import { Session, loadSession, listAllSessions } from '../daemon/session';
 import type { SessionConfig } from '../daemon/session';
 import type { AnyCommandSchema } from './command';
+import { looksLikeLoginUrl, matchesUrlPattern } from './url-guard';
 
 export { saveScreenshotFile } from '../utils/screenshot';
 
@@ -10,6 +11,8 @@ export interface OpenOptions {
   headed?: boolean;
   viewport?: { width: number; height: number };
   state?: string;
+  expectUrl?: string;
+  failOnLogin?: boolean;
 }
 
 export interface OpenResult {
@@ -17,6 +20,19 @@ export interface OpenResult {
   pid?: number;
   url: string;
   viewport: { width: number; height: number };
+}
+
+export interface PageInfo {
+  url: string;
+  title: string;
+  frames: number;
+}
+
+export async function getPageInfo(): Promise<PageInfo> {
+  const session = await loadSession();
+  if (!session) throw new Error('No active session. Run: cssprobe-cli open <url>');
+  const result = await session.run({ _: ['page-info'] });
+  return JSON.parse(result.text) as PageInfo;
 }
 
 export async function openSession(opts: OpenOptions): Promise<OpenResult> {
@@ -36,10 +52,25 @@ export async function openSession(opts: OpenOptions): Promise<OpenResult> {
     throw new Error('Daemon failed to become ready within 5s. Check the daemon log for errors.');
   await session.run({ _: ['goto', url] });
 
+  const info = await getPageInfo();
+  const guardError = (() => {
+    if (opts.failOnLogin && looksLikeLoginUrl(info.url)) {
+      return `Login required: page redirected to ${info.url}. Refresh the state file or log in manually.`;
+    }
+    if (opts.expectUrl && !matchesUrlPattern(opts.expectUrl, info.url)) {
+      return `Expected URL to match ${opts.expectUrl}, got ${info.url}`;
+    }
+    return null;
+  })();
+  if (guardError) {
+    await closeSession();
+    throw new Error(guardError);
+  }
+
   return {
     sessionId: 'default',
     pid,
-    url,
+    url: info.url,
     viewport: opts.viewport || { width: 1280, height: 720 },
   };
 }

@@ -24,6 +24,8 @@ import {
 } from '../browser/interactions';
 import { serializeEvalResult } from '../engine/evalSerializer';
 import { runFlow } from './flowRunner';
+import { describeFrames, formatFrames, resolveFrame } from '../browser/frames';
+import { sampleFrame, summarizeSamples, waitForStableValue } from '../browser/sampler';
 
 import type { SessionConfig, ClientInfo } from './session';
 
@@ -102,6 +104,23 @@ async function executeCommand(
   const params = args._.slice(1);
 
   switch (command) {
+    case 'frames': {
+      const frames = describeFrames(requirePage(launcher));
+      if (args.json) return { text: JSON.stringify(frames, null, 2) };
+      return { text: formatFrames(frames) };
+    }
+
+    case 'page-info': {
+      const page = requirePage(launcher);
+      return {
+        text: JSON.stringify(
+          { url: page.url(), title: await page.title(), frames: describeFrames(page).length },
+          null,
+          2
+        ),
+      };
+    }
+
     case 'goto': {
       const url = params[0] || 'about:blank';
       await launcher.open(url);
@@ -118,7 +137,7 @@ async function executeCommand(
         downDepth: args.depth || 6,
         maxNodes: 60,
         upTo: 'html',
-      });
+      }, resolveFrame(requirePage(launcher), args.frame));
 
       const findings = analyze(snapshot);
 
@@ -139,7 +158,7 @@ async function executeCommand(
         downDepth: args.depth || 6,
         maxNodes: 60,
         upTo: 'html',
-      });
+      }, resolveFrame(requirePage(launcher), args.frame));
 
       // Render tree only
       const lines: string[] = [];
@@ -160,7 +179,7 @@ async function executeCommand(
         downDepth: 6,
         maxNodes: 60,
         upTo: 'html',
-      });
+      }, resolveFrame(requirePage(launcher), args.frame));
 
       const findings = analyze(snapshot);
       return { text: renderMarkdown(snapshot, findings, false, true) };
@@ -176,7 +195,7 @@ async function executeCommand(
         downDepth: 6,
         maxNodes: 60,
         upTo: 'html',
-      });
+      }, resolveFrame(requirePage(launcher), args.frame));
 
       const findings = analyze(snapshot);
       const important = findings.filter(f => f.level === 'warning' || f.level === 'error');
@@ -196,12 +215,9 @@ async function executeCommand(
       if (!css)
         throw new Error('CSS is required for inject-css command');
 
-      const page = launcher.getPage();
-      if (!page)
-        throw new Error('Browser is not open. Run: cssprobe-cli open <url>');
-
-      await page.addStyleTag({ content: css });
-      return { text: JSON.stringify({ success: true }) };
+      const frame = resolveFrame(requirePage(launcher), args.frame);
+      await frame.addStyleTag({ content: css });
+      return { text: JSON.stringify({ success: true, frame: frame.name() || frame.url() }) };
     }
 
     case 'screenshot': {
@@ -219,16 +235,18 @@ async function executeCommand(
       if (!expression)
         throw new Error('Expression is required for eval command');
 
-      const page = launcher.getPage();
-      if (!page)
-        throw new Error('Browser is not open. Run: cssprobe-cli open <url>');
-
-      const handle = await page.evaluateHandle(expression);
+      const frame = resolveFrame(requirePage(launcher), args.frame);
+      const handle = await frame.evaluateHandle(expression);
       try {
-        const result = await handle.evaluate(serializeEvalResult);
-        if (typeof result === 'string') return { text: result };
-        if (result === undefined) return { text: 'undefined' };
-        return { text: JSON.stringify(result, null, 2) };
+        const resolved = await handle.evaluateHandle((value) => Promise.resolve(value));
+        try {
+          const result = await resolved.evaluate(serializeEvalResult);
+          if (typeof result === 'string') return { text: result };
+          if (result === undefined) return { text: 'undefined' };
+          return { text: JSON.stringify(result, null, 2) };
+        } finally {
+          await resolved.dispose();
+        }
       } finally {
         await handle.dispose();
       }
@@ -337,6 +355,46 @@ async function executeCommand(
       }
       const label = target.kind === 'selector' ? `${selector} (${target.state})` : describeWaitTarget(target);
       return { text: `Wait satisfied: ${label} (${elapsedMs}ms)` };
+    }
+
+    case 'sample': {
+      const expression = params[0];
+      if (!expression)
+        throw new Error('Expression is required for sample command');
+
+      const interval = (args.interval as number | undefined) ?? 250;
+      const duration = (args.duration as number | undefined) ?? 5000;
+      if (duration <= 0) throw new Error('--duration must be greater than 0');
+      if (interval <= 0) throw new Error('--interval must be greater than 0');
+
+      const frame = resolveFrame(requirePage(launcher), args.frame);
+      const points = await sampleFrame(frame, expression, {
+        intervalMs: interval,
+        durationMs: duration,
+        ignoreErrors: !!args['ignore-errors'],
+      });
+      const summary = summarizeSamples(
+        points,
+        args.key as string | undefined,
+        5000,
+        args['tail-from'] as number | undefined
+      );
+      return { text: JSON.stringify({ expression, intervalMs: interval, summary, series: points }, null, 2) };
+    }
+
+    case 'wait-stable': {
+      const expression = params[0];
+      if (!expression)
+        throw new Error('Expression is required for wait-stable command');
+
+      const frame = resolveFrame(requirePage(launcher), args.frame);
+      const result = await waitForStableValue(frame, expression, {
+        tolerance: args.tolerance as number | undefined,
+        windowMs: args.window as number | undefined,
+        timeoutMs: args.timeout as number | undefined,
+        intervalMs: args.interval as number | undefined,
+      });
+      return { text: JSON.stringify({ ok: true, expression, ...result }, null, 2) };
     }
 
     case 'run': {
