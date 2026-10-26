@@ -67,7 +67,13 @@ const waitForStep = z.object({
   js: z.string().optional(),
   networkIdle: z.boolean().optional(),
   state: z.enum(['visible', 'hidden', 'attached', 'detached']).optional(),
+  frame: z.string().optional(),
   timeout: z.number().optional(),
+});
+
+const waitStep = z.object({
+  do: z.literal('wait'),
+  ms: z.number().positive(),
 });
 
 const screenshotStep = z.object({
@@ -95,6 +101,7 @@ export const stepSchema = z.discriminatedUnion('do', [
   waitStableStep,
   clickStep,
   waitForStep,
+  waitStep,
   screenshotStep,
   assertStep,
 ]);

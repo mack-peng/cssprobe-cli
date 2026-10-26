@@ -249,6 +249,7 @@ const waitForCmd = declareCommand({
     state: z.enum(['visible', 'hidden', 'attached', 'detached']).optional().describe('selector state to wait for (default visible)'),
     js: z.string().optional().describe('JS predicate, e.g. "() => document.querySelector(\'.x\')?.offsetHeight > 100"'),
     'network-idle': z.boolean().optional().describe('wait until the page is network-idle'),
+    frame: z.string().optional().describe('wait inside a frame: index, name, or URL substring'),
     timeout: numberArg.optional().describe('timeout in ms (default 30000)'),
   }),
 });

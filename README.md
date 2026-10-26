@@ -202,7 +202,8 @@ Inspection commands accept `--frame <index|name|url-substring>` to target an ifr
 | `type <selector> <text>` | Fill text (replaces value); `--press Enter` to submit; `--sequential` for real key events |
 | `wait-for <selector>` | Wait for selector state (`--state visible\|hidden\|attached\|detached`, `--timeout ms`) |
 | `wait-for --js "<predicate>"` | Wait until a JS predicate is truthy |
-| `wait-for --network-idle` | Wait until the page is network-idle |
+| `wait-for --network-idle` | Wait until the page is network-idle (page-level; no `--frame`) |
+| `wait-for ... --frame <spec>` | Wait inside an iframe (selector/js modes) |
 | `sample "<expr>"` | Sample an expression over time (`--interval`, `--duration`, `--key`, `--frame`); returns timeline + summary |
 | `wait-stable "<expr>"` | Wait until an expression stops changing (`--tolerance`, `--window`, `--timeout`) |
 | `run <file>` | Run a multi-step flow script |
@@ -269,7 +270,7 @@ export default async ({ page, context, frames, newPage, click, waitFor, type, in
 cssprobe-cli run ./flow.js        # --timeout ms for the whole script (default 300000, 0 = unlimited)
 ```
 
-Scripts must `default-export` an async function receiving the API object: `page`, `context`, `frames()`, `newPage()`, `click`, `hover`, `type`, `waitFor`, `inspect`, `screenshot`, `expect`, `log`. Uncaught page errors are collected into the result envelope as `pageErrors`. `screenshot` relative paths resolve against the script's directory; logs (`log()` and `console.*`) are collected and returned with the result. On failure the command exits `1`, prints the collected logs, and keeps the session alive.
+Scripts must `default-export` an async function receiving the API object: `page`, `context`, `frames()`, `newPage()`, `click`, `hover`, `type`, `waitFor`, `inspect`, `screenshot`, `expect`, `log`. `waitFor` accepts `{ state, timeout, frame }`. Uncaught page errors are collected into the result envelope as `pageErrors`. `screenshot` relative paths resolve against the script's directory; logs (`log()` and `console.*`) are collected and returned with the result. On failure the command exits `1`, prints the collected logs, and keeps the session alive.
 
 > Scripts are executed by the local daemon with full Node privileges — only run trusted scripts.
 
@@ -313,7 +314,9 @@ cssprobe-cli scenario run suites/ticket-26571394.json \
 }
 ```
 
-Steps: `goto`, `reload`, `eval`, `sample`, `waitStable`, `click`, `waitFor`, `screenshot`, `assert`. `sample` and `eval` save values with `save: "<name>"`; assertions read them with `on: "<name>"` + `path`, or check live `state` (`url`, `title`, `frames`), `url`, `globals`, `absent`. `sample` supports `key`, `tailFrom`, `ignoreErrors`; every run writes `summary.json`, per-case `case.json`, sample series and failure screenshots.
+Steps: `goto`, `reload`, `wait`, `eval`, `sample`, `waitStable`, `click`, `waitFor`, `screenshot`, `assert`. `wait` takes a fixed `ms`; `waitFor` supports `frame` for in-iframe selector/js waits. `sample` and `eval` save values with `save: "<name>"`; assertions read them with `on: "<name>"` + `path`, or check live `state` (`url`, `title`, `frames`), `url`, `globals`, `absent`. `sample` supports `key`, `tailFrom`, `ignoreErrors`; every run writes `summary.json`, per-case `case.json`, sample series and failure screenshots.
+
+**Iframe and preview pages.** A page can contain hidden helper iframes (`about:blank`); use `frames` to pick the real one, and `state: "attached"` when waiting for a frame element that is not visible. Preview frames can take 6–8s to render and analytics requests keep `networkIdle` busy — prefer a fixed `wait` step followed by a `waitFor` inside the frame (`frame: "i/preview"`) instead of `networkIdle`.
 
 ## Confidence Model
 

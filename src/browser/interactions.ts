@@ -1,7 +1,7 @@
 // Interaction primitives shared by daemon commands and the run-script API.
 // Strict mode is preserved when no nth is given: multiple matches fail the action.
 
-import type { Locator, Page } from 'playwright-core';
+import type { Frame, Locator, Page } from 'playwright-core';
 
 export interface ElementDescriptor {
   tag: string;
@@ -133,20 +133,25 @@ export function normalizePredicateExpression(expression: string): string {
 }
 
 export async function waitForCondition(
-  page: Page,
+  host: Page | Frame,
   target: WaitTarget,
   timeout: number
 ): Promise<number> {
+  const isPage = typeof (host as Page).setViewportSize === 'function';
+  if (target.kind === 'networkIdle' && !isPage) {
+    throw new Error('networkIdle waits are page-level; remove the frame target');
+  }
+
   const started = Date.now();
   switch (target.kind) {
     case 'selector':
-      await page.waitForSelector(target.selector, { state: target.state, timeout });
+      await host.waitForSelector(target.selector, { state: target.state, timeout });
       break;
     case 'js':
-      await page.waitForFunction(normalizePredicateExpression(target.expression), null, { timeout });
+      await host.waitForFunction(normalizePredicateExpression(target.expression), null, { timeout });
       break;
     case 'networkIdle':
-      await page.waitForLoadState('networkidle', { timeout });
+      await (host as Page).waitForLoadState('networkidle', { timeout });
       break;
   }
   return Date.now() - started;

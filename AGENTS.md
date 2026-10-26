@@ -4,7 +4,7 @@
 
 `cssprobe-cli` — Runtime CSS probe for layout/scroll/overflow/color/font inspection with session-based browser management. Entrypoint: `bin/cssprobe-cli.js` → `require('../dist/index')`.
 Build: `npm run build` (= `tsc` + `esbuild` collector IIFE bundle + `esbuild` daemon entry + `tsx scripts/generate-help.ts`).
-Test: `npm test` (= `tsx --test tests/*.test.ts` — Node.js built-in test runner, 170 tests).
+Test: `npm test` (= `tsx --test tests/*.test.ts` — Node.js built-in test runner, 173 tests).
 Dependencies: `playwright-core`, `zod`. Dev: `typescript`, `@types/node`, `tsx`, `esbuild`.
 
 ## Architecture
@@ -63,6 +63,7 @@ src/
 - **Output strategy**: `Output` interface → `TextOutput` (Markdown for inspect, tables for lists) / `JsonOutput` (machine-readable JSON).
 - **Config priority**: CLI flags → env vars → `~/.cssprobe-clirc` profiles. Switch with `-p <profile>`.
 - **State management**: `state-import` converts Netscape cookies; `state-save` persists the current session's cookies + localStorage after manual login. Session persists browser state until `close`.
+- **Iframe guidance**: pages may contain hidden helper iframes (`about:blank`); use `frames` to pick the real one and `state: "attached"` for hidden targets. Preview frames can render in 6–8s while analytics keep `networkIdle` busy — use a fixed `wait` plus an in-frame `waitFor` instead of `networkIdle`.
 - **Browser discovery**: `findBrowserExecutable()` scans the platform Playwright cache (macOS/Linux/Windows, `PLAYWRIGHT_BROWSERS_PATH` override), prefers the revision required by the bundled `playwright-core`, and falls back to the newest install. `doctor` reports expected vs installed revisions.
 - **Error format**: `Error: <message>` → JSON mode: `{ isError: true, error: "<message>" }` → `process.exit(1)`
 
@@ -116,14 +117,17 @@ src/
   - `wait-for --js "<predicate>"` — wait until a JS predicate is truthy
   - `wait-for --network-idle` — wait until the page is network-idle
   - `--timeout <ms>` — default 30000; timeout errors name the target
+  - `--frame <index|name|url-substring>` — wait inside a frame (selector/js only; `networkIdle` is page-level)
 - `scenario run <file>` — Run a JSON scenario suite (fresh browser per case, assertions, artifacts, JUnit)
   - `--state <file>` — Fallback state file for cases without one
   - `--artifacts <dir>` — Artifact directory (default `~/.cssprobe-cli/scenario-runs/<suite>-<timestamp>`)
   - `--junit <file>` — Write a JUnit XML report
   - `--bail` — Stop after the first failing case
-  - Steps: `goto`, `reload`, `eval`, `sample`, `waitStable`, `click`, `waitFor`, `screenshot`, `assert`
+  - Steps: `goto`, `reload`, `wait`, `eval`, `sample`, `waitStable`, `click`, `waitFor`, `screenshot`, `assert`
+  - `wait` takes a fixed `ms`; `waitFor` accepts `frame` for in-iframe selector/js waits
 - `run <file>` — Run a multi-step flow script inside the daemon
   - Script default-exports an async function receiving the API object: `page`, `context`, `frames()`, `newPage()`, `click`, `hover`, `type`, `waitFor`, `inspect`, `screenshot`, `expect`, `log` (CJS also supported)
+  - `waitFor(target, { state, timeout, frame })`; `frame` targets iframe selector/js waits
   - Uncaught page errors are collected in the envelope as `pageErrors[]`
   - `--timeout <ms>` — whole-script guard (default 300000, 0 = unlimited); failure exits 1 and keeps the session alive
   - `screenshot` relative paths resolve against the script's directory; logs collected and returned

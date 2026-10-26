@@ -230,15 +230,25 @@ async function executeStep(step: Step, context: ExecuteContext): Promise<void> {
     }
     case 'waitFor': {
       const timeout = step.timeout ?? 30000;
+      const frameSpec = step.frame ?? context.frameSpec;
       if (step.networkIdle) {
+        if (frameSpec) throw new Error('networkIdle waits are page-level; remove frame');
         await waitForCondition(page, { kind: 'networkIdle' }, timeout);
       } else if (step.js) {
-        await waitForCondition(page, { kind: 'js', expression: step.js }, timeout);
+        await waitForCondition(frameSpec ? resolveFrame(page, frameSpec) : page, { kind: 'js', expression: step.js }, timeout);
       } else if (step.selector) {
-        await waitForCondition(page, { kind: 'selector', selector: step.selector, state: step.state ?? 'visible' }, timeout);
+        await waitForCondition(
+          frameSpec ? resolveFrame(page, frameSpec) : page,
+          { kind: 'selector', selector: step.selector, state: step.state ?? 'visible' },
+          timeout
+        );
       } else {
         throw new Error('waitFor requires selector, js, or networkIdle');
       }
+      return;
+    }
+    case 'wait': {
+      await new Promise(resolve => setTimeout(resolve, step.ms));
       return;
     }
     case 'screenshot': {

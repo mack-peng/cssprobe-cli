@@ -337,9 +337,11 @@ async function executeCommand(
         state: args.state,
       });
 
+      const page = requirePage(launcher);
+      const waitHost = args.frame ? resolveFrame(page, args.frame) : page;
       let elapsedMs: number;
       try {
-        elapsedMs = await waitForCondition(requirePage(launcher), target, timeout);
+        elapsedMs = await waitForCondition(waitHost, target, timeout);
       } catch (e) {
         throw new Error(`wait-for failed for ${describeWaitTarget(target)} within ${timeout}ms: ${(e as Error).message}`);
       }
