@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.1] - 2026-10-23
+
+### Added
+- `wait-for --frame` (selector/js), scenario `waitFor.frame`, and flow `waitFor(target, { frame })`
+- Scenario `wait` step for fixed delays before slow-rendering preview frames
+
+### Documentation
+- Iframe/preview guidance: hidden helper frames need `state: "attached"`; prefer in-frame `waitFor` over `networkIdle` when analytics keep the page busy
+
 ## [0.4.0] - 2026-10-23
 
 ### Added

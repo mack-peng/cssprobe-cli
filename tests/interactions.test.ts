@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { resolveWaitTarget, normalizePredicateExpression } from '../src/browser/interactions';
+import { resolveWaitTarget, normalizePredicateExpression, waitForCondition } from '../src/browser/interactions';
 
 describe('interactions', () => {
   describe('normalizePredicateExpression', () => {
@@ -17,6 +17,14 @@ describe('interactions', () => {
     it('leaves bare expressions untouched', () => {
       assert.strictEqual(normalizePredicateExpression("document.readyState === 'complete'"), "document.readyState === 'complete'");
       assert.strictEqual(normalizePredicateExpression('window.ready'), 'window.ready');
+    });
+  });
+
+  describe('waitForCondition', () => {
+    it('rejects networkIdle when targeting a frame', async () => {
+      await assert.rejects(waitForCondition({} as any, { kind: 'networkIdle' }, 10), /page-level/);
+      const frameLike = { goto: async () => {}, waitForLoadState: async () => {} };
+      await assert.rejects(waitForCondition(frameLike as any, { kind: 'networkIdle' }, 10), /page-level/);
     });
   });
 

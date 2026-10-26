@@ -20,7 +20,7 @@ import { renderMarkdown } from '../engine/renderer';
 import { serializeEvalResult } from '../engine/evalSerializer';
 import { saveScreenshotFile } from '../utils/screenshot';
 import type { Finding, Snapshot } from '../engine/types';
-import { describeFrames, type FrameInfo } from '../browser/frames';
+import { describeFrames, resolveFrame, type FrameInfo } from '../browser/frames';
 import { expect as expectValue, type Matchers } from './expect';
 
 export interface FlowPageError {
@@ -40,6 +40,7 @@ export interface FlowEnvelope {
 export interface WaitForOptions {
   state?: WaitState;
   timeout?: number;
+  frame?: string;
 }
 
 export interface WaitOutcome {
@@ -127,20 +128,22 @@ async function flowWaitFor(
   target: string | { js: string; timeout?: number } | { networkIdle: true; timeout?: number },
   opts?: WaitForOptions
 ): Promise<WaitOutcome> {
+  const host = opts?.frame ? resolveFrame(page, opts.frame) : page;
   if (typeof target === 'string') {
     const state = opts?.state ?? 'visible';
     const timeout = opts?.timeout ?? 30_000;
-    const elapsedMs = await waitForCondition(page, { kind: 'selector', selector: target, state }, timeout);
+    const elapsedMs = await waitForCondition(host, { kind: 'selector', selector: target, state }, timeout);
     return { waitedFor: 'selector', state, elapsedMs };
   }
   if ('js' in target) {
     const timeout = target.timeout ?? 30_000;
-    const elapsedMs = await waitForCondition(page, { kind: 'js', expression: target.js }, timeout);
+    const elapsedMs = await waitForCondition(host, { kind: 'js', expression: target.js }, timeout);
     return { waitedFor: 'js', elapsedMs };
   }
   if (target.networkIdle) {
+    if (opts?.frame) throw new Error('networkIdle waits are page-level; remove opts.frame');
     const timeout = target.timeout ?? 30_000;
-    const elapsedMs = await waitForCondition(page, { kind: 'networkIdle' }, timeout);
+    const elapsedMs = await waitForCondition(host, { kind: 'networkIdle' }, timeout);
     return { waitedFor: 'networkidle', elapsedMs };
   }
   throw new Error('waitFor requires a selector string, { js }, or { networkIdle: true }');

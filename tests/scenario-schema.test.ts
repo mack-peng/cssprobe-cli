@@ -33,6 +33,27 @@ describe('scenario schema', () => {
     assert.throws(() => suiteSchema.parse({ name: 'x', cases: [] }), /at least 1/);
   });
 
+  it('accepts fixed waits and frame-scoped waits', () => {
+    const suite = suiteSchema.parse({
+      name: 'waits',
+      cases: [
+        {
+          name: 'preview',
+          steps: [
+            { do: 'wait', ms: 6000 },
+            { do: 'waitFor', js: '() => true', frame: 'i/preview', timeout: 15000 },
+            { do: 'waitFor', selector: '.ready', state: 'attached' },
+          ],
+        },
+      ],
+    });
+    assert.strictEqual(suite.cases[0].steps.length, 3);
+  });
+
+  it('rejects non-positive waits', () => {
+    assert.throws(() => suiteSchema.parse({ name: 'x', cases: [{ name: 'c', steps: [{ do: 'wait', ms: 0 }] }] }));
+  });
+
   it('accepts deployment fingerprint assertions', () => {
     const suite = suiteSchema.parse({
       name: 'fingerprint',
