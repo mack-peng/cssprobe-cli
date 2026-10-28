@@ -25,8 +25,6 @@ const SAMPLE_PS = `
   43211 19336 /Users/mack/Library/Caches/ms-playwright/chromium-1200/chrome-mac/Chromium
 `;
 
-const ENTRY = '/Users/mack/.nvm/versions/node/v24.1.0/lib/node_modules/cssprobe-cli/dist/daemon/daemonEntry.js';
-
 describe('processSweep', () => {
   describe('parseProcessRows', () => {
     it('parses pid, ppid and command from ps output', () => {
@@ -49,19 +47,24 @@ describe('processSweep', () => {
   describe('matchDaemonProcesses', () => {
     const rows = parseProcessRows(SAMPLE_PS);
 
-    it('matches only daemons under the install path of this CLI', () => {
-      const matched = matchDaemonProcesses(rows, ENTRY, 0);
+    it('matches cssprobe daemons across install locations', () => {
+      const matched = matchDaemonProcesses(rows, 0);
       assert.deepStrictEqual(matched.map(m => m.pid).sort((a, b) => a - b), [19336, 19778, 20283]);
     });
 
-    it('excludes processes of other tools with a different install prefix', () => {
-      const matched = matchDaemonProcesses(rows, '/opt/other-cli/dist/daemon/daemonEntry.js', 0);
-      assert.strictEqual(matched.length, 0);
+    it('excludes processes of other tools (playwright-cli)', () => {
+      const matched = matchDaemonProcesses(rows, 0);
+      assert.ok(!matched.some(m => m.pid === 43210));
+    });
+
+    it('requires daemonEntry.js as a path segment, not a bare word', () => {
+      const grepLike = [{ pid: 55555, ppid: 1, command: 'rg daemonEntry.js /Users/mack/Cli-projects/cssprobe-cli' }];
+      assert.strictEqual(matchDaemonProcesses(grepLike, 0).length, 0);
     });
 
     it('excludes the caller itself', () => {
-      const rows2 = [...rows, { pid: 99999, ppid: 1, command: `node ${ENTRY} default` }];
-      const matched = matchDaemonProcesses(rows2, ENTRY, 99999);
+      const rows2 = [...rows, { pid: 99999, ppid: 1, command: `node /opt/cssprobe-cli/dist/daemon/daemonEntry.js default` }];
+      const matched = matchDaemonProcesses(rows2, 99999);
       assert.ok(!matched.some(m => m.pid === 99999));
     });
   });
@@ -81,8 +84,8 @@ describe('processSweep', () => {
 
   describe('findDaemonProcesses', () => {
     it('uses injected rows provider and excludes self pid', async () => {
-      const rows = parseProcessRows(SAMPLE_PS).concat([{ pid: process.pid, ppid: 1, command: `node ${ENTRY} default` }]);
-      const found = await findDaemonProcesses(async () => rows, ENTRY);
+      const rows = parseProcessRows(SAMPLE_PS).concat([{ pid: process.pid, ppid: 1, command: `node /opt/cssprobe-cli/dist/daemon/daemonEntry.js default` }]);
+      const found = await findDaemonProcesses(async () => rows);
       assert.deepStrictEqual(found.map(f => f.pid).sort((a, b) => a - b), [19336, 19778, 20283]);
     });
   });

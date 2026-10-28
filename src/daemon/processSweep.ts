@@ -17,10 +17,6 @@ export interface ProcessRow {
 
 export type RowsProvider = () => Promise<ProcessRow[]>;
 
-export function daemonEntryPath(): string {
-  return path.join(__dirname, 'daemonEntry.js');
-}
-
 export function parseProcessRows(output: string): ProcessRow[] {
   const rows: ProcessRow[] = [];
   for (const line of output.split('\n')) {
@@ -31,10 +27,11 @@ export function parseProcessRows(output: string): ProcessRow[] {
   return rows;
 }
 
-export function matchDaemonProcesses(rows: ProcessRow[], entryPath: string, excludePid: number): DaemonProcess[] {
+export function matchDaemonProcesses(rows: ProcessRow[], excludePid: number, toolMarker = 'cssprobe-cli'): DaemonProcess[] {
+  const entrySegment = /[\\/]daemonEntry\.js(?![\w.])/;
   return rows
     .filter(row => row.pid !== excludePid)
-    .filter(row => row.command.includes(entryPath))
+    .filter(row => entrySegment.test(row.command) && row.command.includes(toolMarker))
     .map(row => ({ pid: row.pid, command: row.command }));
 }
 
@@ -77,11 +74,8 @@ async function listProcessRowsWindows(): Promise<ProcessRow[]> {
     }));
 }
 
-export async function findDaemonProcesses(
-  rowsProvider: RowsProvider = listProcessRows,
-  entryPath: string = daemonEntryPath()
-): Promise<DaemonProcess[]> {
-  return matchDaemonProcesses(await rowsProvider(), entryPath, process.pid);
+export async function findDaemonProcesses(rowsProvider: RowsProvider = listProcessRows): Promise<DaemonProcess[]> {
+  return matchDaemonProcesses(await rowsProvider(), process.pid);
 }
 
 function pidAlive(pid: number): boolean {
