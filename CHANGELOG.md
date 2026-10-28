@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.2] - 2026-10-28
+
+### Changed
+- `close --all --json` output shape: `{ sessions: [{ sessionId, closed, method, error? }] }` (was `{ closed: [...] }`)
+- Unreachable sessions are now reported honestly (`closed: false`, stale session files cleaned) instead of a fake success
+
+### Fixed
+- `close --all` now closes orphan browsers: after socket-based close, it sweeps daemon processes (`daemonEntry.js` under any cssprobe-cli install location), gracefully stopping via socket when reachable, then SIGTERM → SIGKILL on the process tree (chromium children included)
+- Stale session/socket files are cleaned up and reported as `cleaned`
+
 ## [0.4.1] - 2026-10-23
 
 ### Added
