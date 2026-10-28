@@ -214,18 +214,32 @@ async function handleClose(command: AnyCommandSchema, args: MinimistArgs, output
     const parsed = parseCommand(command, cmdArgs as Record<string, string> & { _: string[] });
 
     const result = await closeSession(!!parsed.all);
+    const first = result.sessions[0];
 
     if (output.json) {
       console.log(JSON.stringify(
-        parsed.all ? { closed: result.sessions } : { closed: true, sessionId: 'default' },
+        parsed.all
+          ? { sessions: result.sessions }
+          : {
+              closed: first?.closed === true,
+              sessionId: 'default',
+              ...(first?.method ? { method: first.method } : {}),
+              ...(first?.error ? { error: first.error } : {}),
+            },
         null,
         2
       ));
     } else if (parsed.all) {
+      const byMethod = (method: string) => result.sessions.filter(r => r.method === method).length;
       const closedCount = result.sessions.filter(r => r.closed).length;
-      console.log(`Closed ${closedCount} session(s).`);
-    } else {
+      const parts = [`${byMethod('socket')} closed`, `${byMethod('process')} killed`];
+      const cleaned = byMethod('cleaned');
+      if (cleaned) parts.push(`${cleaned} cleaned`);
+      console.log(`Closed ${closedCount} session(s): ${parts.join(', ')}`);
+    } else if (first?.closed) {
       console.log('Browser closed.');
+    } else {
+      console.log(`Session not reachable. ${first?.error ?? ''}`.trim());
     }
   } catch (e: any) {
     output.error(e instanceof Error ? e.message : String(e));

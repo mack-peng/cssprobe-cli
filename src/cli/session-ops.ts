@@ -1,5 +1,7 @@
 import { Session, loadSession, listAllSessions } from '../daemon/session';
 import type { SessionConfig } from '../daemon/session';
+import { findDaemonProcesses, killProcessTree } from '../daemon/processSweep';
+import type { DaemonProcess } from '../daemon/processSweep';
 import type { AnyCommandSchema } from './command';
 import { looksLikeLoginUrl, matchesUrlPattern } from './url-guard';
 
@@ -85,34 +87,70 @@ export async function waitForSession(timeoutMs: number): Promise<Session | undef
   return undefined;
 }
 
+export type CloseMethod = 'socket' | 'process' | 'cleaned';
+
 export interface CloseResult {
-  sessions: Array<{ sessionId: string; closed: boolean; error?: string }>;
+  sessions: Array<{ sessionId: string; closed: boolean; method?: CloseMethod; error?: string }>;
+}
+
+export interface SweepOps {
+  find: () => Promise<DaemonProcess[]>;
+  kill: (pid: number) => Promise<void>;
+}
+
+const defaultSweep: SweepOps = { find: findDaemonProcesses, kill: killProcessTree };
+
+export async function closeAllSessions(sessions: Session[], sweep: SweepOps = defaultSweep): Promise<CloseResult> {
+  const results: CloseResult['sessions'] = [];
+
+  for (const session of sessions) {
+    try {
+      const { wasOpen } = await session.stop();
+      if (wasOpen) {
+        results.push({ sessionId: session.name, closed: true, method: 'socket' });
+      } else {
+        await session.removeStaleFiles();
+        results.push({ sessionId: session.name, closed: false, method: 'cleaned', error: 'session not reachable' });
+      }
+    } catch (e) {
+      results.push({ sessionId: session.name, closed: false, error: (e as Error).message });
+    }
+  }
+
+  for (const orphan of await sweep.find()) {
+    try {
+      await sweep.kill(orphan.pid);
+      results.push({ sessionId: `pid-${orphan.pid}`, closed: true, method: 'process' });
+    } catch (e) {
+      results.push({ sessionId: `pid-${orphan.pid}`, closed: false, method: 'process', error: (e as Error).message });
+    }
+  }
+
+  if (results.length === 0)
+    throw new Error('No active sessions found.');
+  return { sessions: results };
+}
+
+export async function closeReachableSession(session: Session): Promise<CloseResult> {
+  const { wasOpen } = await session.stop();
+  if (!wasOpen) {
+    await session.removeStaleFiles();
+    return { sessions: [{ sessionId: session.name, closed: false, method: 'cleaned', error: 'session not reachable' }] };
+  }
+  return { sessions: [{ sessionId: session.name, closed: true, method: 'socket' }] };
 }
 
 export async function closeSession(all = false): Promise<CloseResult> {
   if (all) {
     const sessions = await listAllSessions();
-    if (sessions.length === 0)
-      throw new Error('No active sessions found.');
-
-    const results: CloseResult['sessions'] = [];
-    for (const session of sessions) {
-      try {
-        await session.stop();
-        results.push({ sessionId: session.name, closed: true });
-      } catch (e) {
-        results.push({ sessionId: session.name, closed: false, error: (e as Error).message });
-      }
-    }
-    return { sessions: results };
+    return await closeAllSessions(sessions);
   }
 
   const session = await loadSession();
   if (!session)
     throw new Error('No active session. Run: cssprobe-cli open <url>');
 
-  await session.stop();
-  return { sessions: [{ sessionId: 'default', closed: true }] };
+  return await closeReachableSession(session);
 }
 
 export interface StatusResult {

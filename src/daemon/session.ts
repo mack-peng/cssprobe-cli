@@ -55,6 +55,12 @@ export class Session {
     return { wasOpen: true };
   }
 
+  async removeStaleFiles(): Promise<void> {
+    if (os.platform() !== 'win32')
+      await fs.promises.unlink(this.config.socketPath).catch(() => {});
+    await fs.promises.unlink(this._sessionFile.file).catch(() => {});
+  }
+
   async canConnect(): Promise<boolean> {
     const { socket } = await this._connect();
     if (socket) {
