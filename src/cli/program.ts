@@ -239,7 +239,7 @@ async function handleClose(command: AnyCommandSchema, args: MinimistArgs, output
     } else if (first?.closed) {
       console.log('Browser closed.');
     } else {
-      console.log(`Session not reachable. ${first?.error ?? ''}`.trim());
+      console.log('Session not reachable. Stale session files cleaned.');
     }
   } catch (e: any) {
     output.error(e instanceof Error ? e.message : String(e));
